@@ -312,12 +312,13 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-/**
- * 根路径访问，用于 Cloud Run 健康检查
- */
-app.get('/', (req, res) => {
-    res.send('Caption Server is running.');
-});
+// 托管前端静态文件
+// 注意：Docker 构建中，我们将 frontend dist 放在 server 的上一级或同级，这里假设 dist 在 ../dist
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+    console.log('📦 Serving frontend from:', distPath);
+    app.use(express.static(distPath));
+}
 
 /**
  * 上传并处理视频
@@ -496,6 +497,13 @@ app.get('/api/task/:taskId/stream', (req, res) => {
 
     sendUpdate();
 });
+
+// 所有其他未匹配的路由，返回 React 前端应用的 index.html (SPA 支持)
+if (fs.existsSync(distPath)) {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+}
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
