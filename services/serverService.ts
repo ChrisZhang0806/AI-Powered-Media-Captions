@@ -22,7 +22,8 @@ export const transcribeWithServer = async (
     segmentStyle: SegmentStyle = 'natural',
     contextPrompt: string = '',
     onChunk: (segments: CaptionSegment[]) => void,
-    onProgress?: (info: ProgressInfo) => void
+    onProgress?: (info: ProgressInfo) => void,
+    apiKey?: string
 ): Promise<void> => {
     // 1. 上传文件
     onProgress?.({
@@ -36,6 +37,7 @@ export const transcribeWithServer = async (
     formData.append('file', file);
     formData.append('segmentStyle', segmentStyle);
     formData.append('contextPrompt', contextPrompt);
+    if (apiKey) formData.append('apiKey', apiKey);
 
     const uploadResponse = await fetch(`${SERVER_URL}/api/transcribe`, {
         method: 'POST',

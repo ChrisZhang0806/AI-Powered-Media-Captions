@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileVideo, Download, Play, Clock, AlertCircle, Trash2, Edit2, Save, Loader2, Languages, Sliders, Type as TypeIcon, FileStack, Files, Sparkles, Music, ChevronRight, Globe, ChevronDown, FileText, Check, Plus, Pause, FastForward, Rewind, Settings } from 'lucide-react';
 import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat, DownloadMode } from './types';
-import { generateCaptionsStream, translateSegments, refineSegments, CaptionMode, ProgressInfo, SegmentStyle } from './services/openaiService';
+import { generateCaptionsStream, translateSegments, refineSegments, CaptionMode, ProgressInfo, SegmentStyle, validateApiKey } from './services/openaiService';
 import { transcribeWithServer, checkServerHealth } from './services/serverService';
 import { downloadCaptions, parseCaptions } from './utils/captionUtils';
 import { Button } from './components/Button';
@@ -62,6 +62,12 @@ const App: React.FC = () => {
 
     // 进度状态
     const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
+
+    // API Key 状态
+    const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('openai_api_key') || '');
+    const [showApiKeyPanel, setShowApiKeyPanel] = useState(false);
+    const [tempApiKey, setTempApiKey] = useState('');
+    const [isValidatingKey, setIsValidatingKey] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
@@ -251,7 +257,8 @@ const App: React.FC = () => {
                         lastSegments = streamedSegments;
                         scrollToBottom();
                     },
-                    (info) => setProgressInfo(info)
+                    (info) => setProgressInfo(info),
+                    userApiKey
                 );
 
                 // 如果需要翻译，在前端执行（后端只负责转录）
@@ -264,7 +271,7 @@ const App: React.FC = () => {
                         detail: `正在翻译为 ${targetLang}`
                     });
 
-                    const translated = await translateSegments(lastSegments, targetLang, styleTemp);
+                    const translated = await translateSegments(lastSegments, targetLang, styleTemp, undefined, userApiKey);
                     if (captionMode === 'Translation') {
                         setCaptions(translated);
                         lastSegments = translated;
@@ -292,7 +299,8 @@ const App: React.FC = () => {
                     },
                     (info) => {
                         setProgressInfo(info);
-                    }
+                    },
+                    userApiKey
                 );
             }
 
@@ -329,13 +337,34 @@ const App: React.FC = () => {
             // 传入风格值和回调，实现实时预览
             await translateSegments(captions, targetLang, styleTemp, (updatedChunks) => {
                 setCaptions(updatedChunks);
-            });
+            }, userApiKey);
             // 翻译开始后立即切换模式
             setCaptionMode('Bilingual');
         } catch (err: any) {
             setErrorMsg(err.message || "翻译失败");
         } finally {
             setIsTranslating(false);
+        }
+    };
+
+    const handleSaveApiKey = async () => {
+        if (!tempApiKey.trim()) {
+            setUserApiKey('');
+            localStorage.removeItem('openai_api_key');
+            setShowApiKeyPanel(false);
+            return;
+        }
+
+        setIsValidatingKey(true);
+        const isValid = await validateApiKey(tempApiKey);
+        setIsValidatingKey(false);
+
+        if (isValid) {
+            setUserApiKey(tempApiKey);
+            localStorage.setItem('openai_api_key', tempApiKey);
+            setShowApiKeyPanel(false);
+        } else {
+            setErrorMsg('API Key 验证失败，请检查是否输入正确。');
         }
     };
 
@@ -376,9 +405,58 @@ const App: React.FC = () => {
                             AI Powered <span className="text-primary-600">Media Captions</span>
                         </button>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 bg-primary-100 text-primary-700 rounded uppercase tracking-wider hidden sm:block">
-                        OpenAI Whisper
-                    </span>
+
+                    <div className="relative">
+                        <button
+                            onClick={() => {
+                                setTempApiKey(userApiKey);
+                                setShowApiKeyPanel(!showApiKeyPanel);
+                            }}
+                            className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-medium transition-all ${userApiKey ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'} hover:shadow-sm active:scale-95`}
+                        >
+                            OPENAI API KEY
+                        </button>
+
+                        {showApiKeyPanel && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowApiKeyPanel(false)} />
+                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
+                                    <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                        配置 OpenAI API Key
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500 mb-3 leading-normal">
+                                        配置您自己的 API Key 后，系统将优先使用该 Key 进行处理。Key 将仅保存在您的浏览器本地。
+                                    </p>
+                                    <div className="space-y-3">
+                                        <input
+                                            type="password"
+                                            value={tempApiKey}
+                                            onChange={(e) => setTempApiKey(e.target.value)}
+                                            placeholder="sk-..."
+                                            className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 p-2 bg-slate-50"
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowApiKeyPanel(false)}
+                                                className="flex-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition-colors"
+                                            >
+                                                取消
+                                            </button>
+                                            <button
+                                                onClick={handleSaveApiKey}
+                                                disabled={isValidatingKey}
+                                                className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                {isValidatingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                                验证并确认
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </header>
 

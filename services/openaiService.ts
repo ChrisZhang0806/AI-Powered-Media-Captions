@@ -42,16 +42,44 @@ const formatTimestamp = (seconds: number): string => {
 };
 
 /**
+ * 验证 API Key 是否有效
+ */
+export const validateApiKey = async (apiKey: string): Promise<boolean> => {
+    try {
+        const testClient = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        await testClient.models.list();
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+/**
+ * 获取 OpenAI 客户端实例
+ */
+const getClient = (userApiKey?: string) => {
+    if (userApiKey) {
+        return new OpenAI({
+            apiKey: userApiKey,
+            dangerouslyAllowBrowser: true
+        });
+    }
+    return openai;
+};
+
+/**
  * 转录单个音频片段
  */
 const transcribeSegment = async (
     audioBlob: Blob,
     language?: string,
-    segmentStyle: SegmentStyle = 'natural'
+    segmentStyle: SegmentStyle = 'natural',
+    userApiKey?: string
 ): Promise<{ start: number; end: number; text: string }[]> => {
     const file = new File([audioBlob], 'audio.mp3', { type: 'audio/mp3' });
+    const client = getClient(userApiKey);
 
-    const response = await openai.audio.transcriptions.create({
+    const response = await client.audio.transcriptions.create({
         file,
         model: 'whisper-1',
         response_format: 'verbose_json',
@@ -73,7 +101,8 @@ export const generateCaptionsStream = async (
     mode: CaptionMode = 'Original',
     segmentStyle: SegmentStyle = 'natural',
     onChunk: (segments: CaptionSegment[]) => void,
-    onProgress?: (info: ProgressInfo) => void
+    onProgress?: (info: ProgressInfo) => void,
+    userApiKey?: string
 ): Promise<void> => {
     const MAX_DIRECT_SIZE = 24 * 1024 * 1024; // 24MB (预留1MB缓冲)
     const isSmallAudioFile = file.type.startsWith('audio/') && file.size <= MAX_DIRECT_SIZE;
@@ -98,7 +127,7 @@ export const generateCaptionsStream = async (
         }, 1500);
 
         try {
-            const whisperSegments = await transcribeSegment(file, undefined, segmentStyle);
+            const whisperSegments = await transcribeSegment(file, undefined, segmentStyle, userApiKey);
             clearInterval(progressInterval);
 
             onProgress?.({
@@ -126,7 +155,7 @@ export const generateCaptionsStream = async (
                     detail: `翻译为 ${targetLanguage}`
                 });
 
-                const translated = await translateSegments(captions, targetLanguage);
+                const translated = await translateSegments(captions, targetLanguage, 0.5, undefined, userApiKey);
                 if (mode === 'Translation') {
                     onChunk(translated);
                 } else {
@@ -234,7 +263,7 @@ export const generateCaptionsStream = async (
                         detail: `正在处理第 ${currentSegmentIndex + 1} 个片段`
                     });
 
-                    const whisperSegments = await transcribeSegment(blob, undefined, segmentStyle);
+                    const whisperSegments = await transcribeSegment(blob, undefined, segmentStyle, userApiKey);
 
                     const newCaptions: CaptionSegment[] = whisperSegments.map(seg => ({
                         id: 0, // 临时，后续会重新分配
@@ -247,7 +276,7 @@ export const generateCaptionsStream = async (
 
                     // 3. 实时翻译（如果是单语翻译模式或双语模式）
                     if (mode !== 'Original' && newCaptions.length > 0) {
-                        const translated = await translateSegments(newCaptions, targetLanguage);
+                        const translated = await translateSegments(newCaptions, targetLanguage, 0.5, undefined, userApiKey);
 
                         // 更新总列表中的对应项
                         const finalBilingual = currentFullList.map(cap => {
@@ -314,7 +343,8 @@ export const translateSegments = async (
     segments: CaptionSegment[],
     targetLanguage: string,
     styleValue: number = 0.5,
-    onChunk?: (translatedSegments: CaptionSegment[]) => void
+    onChunk?: (translatedSegments: CaptionSegment[]) => void,
+    userApiKey?: string
 ): Promise<CaptionSegment[]> => {
     if (segments.length === 0) return [];
 
@@ -338,9 +368,10 @@ export const translateSegments = async (
 
         // 使用 JSON 结构包装输入，彻底消除歧义
         const inputData = batch.map((s, idx) => ({ id: idx, text: s.text }));
+        const client = getClient(userApiKey);
 
         try {
-            const response = await openai.chat.completions.create({
+            const response = await client.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -398,12 +429,15 @@ CRITICAL:
  * 语义优化字幕断句（使用 GPT）
  */
 export const refineSegments = async (
-    segments: CaptionSegment[]
+    segments: CaptionSegment[],
+    userApiKey?: string
 ): Promise<CaptionSegment[]> => {
     if (segments.length <= 1) return segments;
 
+    const client = getClient(userApiKey);
+
     try {
-        const response = await openai.chat.completions.create({
+        const response = await client.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
                 {

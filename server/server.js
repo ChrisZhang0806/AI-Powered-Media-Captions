@@ -158,7 +158,7 @@ function splitAudio(inputPath, outputDir, maxDuration = 600) {
 /**
  * 调用 Whisper API 转录，并进行智能断句优化
  */
-async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natural', userContext = '') {
+async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natural', userContext = '', userApiKey = null) {
     const audioFile = fs.createReadStream(audioPath);
 
     const stylePrompt = SEGMENT_STYLE_PROMPTS[style] || SEGMENT_STYLE_PROMPTS.natural;
@@ -167,7 +167,10 @@ async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natura
         ? `${userContext.substring(0, 150)}. ${stylePrompt}`
         : stylePrompt;
 
-    const response = await openai.audio.transcriptions.create({
+    // 如果用户提供了自己的 Key，创建一个临时的 OpenAI 实例
+    const client = userApiKey ? new OpenAI({ apiKey: userApiKey }) : openai;
+
+    const response = await client.audio.transcriptions.create({
         file: audioFile,
         model: 'whisper-1',
         response_format: 'verbose_json',
@@ -334,13 +337,13 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     res.json({ taskId, message: '任务已开始' });
 
     // 后台处理
-    processFile(taskId, req.file.path, req.file.mimetype, req.body.segmentStyle || 'natural', req.body.contextPrompt || '');
+    processFile(taskId, req.file.path, req.file.mimetype, req.body.segmentStyle || 'natural', req.body.contextPrompt || '', req.body.apiKey || null);
 });
 
 /**
  * 后台处理文件
  */
-async function processFile(taskId, filePath, mimeType, segmentStyle, contextPrompt) {
+async function processFile(taskId, filePath, mimeType, segmentStyle, contextPrompt, userApiKey) {
     const task = tasks.get(taskId);
     const isVideo = mimeType.startsWith('video/');
     let audioPath = filePath;
@@ -380,7 +383,7 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
             for (let i = 0; i < audioSegments.length; i += concurrency) {
                 const batch = audioSegments.slice(i, i + concurrency);
                 const results = await Promise.all(
-                    batch.map(seg => transcribeSegment(seg.path, seg.startTime, segmentStyle, contextPrompt))
+                    batch.map(seg => transcribeSegment(seg.path, seg.startTime, segmentStyle, contextPrompt, userApiKey))
                 );
 
                 results.forEach(segs => allSegments.push(...segs));
@@ -396,7 +399,7 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
             task.stage = 'transcribing';
             task.progress = 40;
 
-            allSegments = await transcribeSegment(audioPath, 0, segmentStyle, contextPrompt);
+            allSegments = await transcribeSegment(audioPath, 0, segmentStyle, contextPrompt, userApiKey);
             task.progress = 90;
         }
 
