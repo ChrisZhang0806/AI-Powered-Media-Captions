@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, Check } from 'lucide-react';
+import { Loader2, Check, ExternalLink } from 'lucide-react';
 import { useApiKey } from '../hooks/useApiKey';
 
 interface HeaderProps {
@@ -47,7 +47,16 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                     配置 OpenAI API Key
                                 </h4>
                                 <p className="text-[10px] text-slate-500 mb-3 leading-normal">
-                                    配置您自己的 API Key 后，系统将优先使用该 Key 进行处理。Key 将仅保存在您的浏览器本地。
+                                    本工具需配置有效的 OpenAI API Key 才能使用。Key 将仅保存在您的浏览器本地。
+                                    <a
+                                        href="https://platform.openai.com/settings/organization/usage"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary-600 hover:underline ml-1 inline-flex items-center gap-0.5"
+                                    >
+                                        查看余额/用量
+                                        <ExternalLink className="w-3 h-3" />
+                                    </a>
                                 </p>
                                 <div className="space-y-3">
                                     <input
