@@ -1,0 +1,85 @@
+import React from 'react';
+import { Loader2, Check } from 'lucide-react';
+import { useApiKey } from '../hooks/useApiKey';
+
+interface HeaderProps {
+    onReset: () => void;
+    apiKeyData: ReturnType<typeof useApiKey>;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
+    const {
+        userApiKey,
+        showApiKeyPanel,
+        tempApiKey,
+        setTempApiKey,
+        isValidatingKey,
+        openPanel,
+        closePanel,
+        saveApiKey,
+    } = apiKeyData;
+
+    return (
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={onReset}
+                        className="text-lg text-slate-900 tracking-tight transition-all hover:scale-[1.02] active:scale-95 hover:opacity-80 flex items-center gap-2"
+                    >
+                        AI Powered <span className="text-primary-600">Media Captions</span>
+                    </button>
+                </div>
+
+                <div className="relative">
+                    <button
+                        onClick={showApiKeyPanel ? closePanel : openPanel}
+                        className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-medium transition-all ${userApiKey ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'} hover:shadow-sm active:scale-95`}
+                    >
+                        OPENAI API KEY
+                    </button>
+
+                    {showApiKeyPanel && (
+                        <>
+                            <div className="fixed inset-0 z-[60]" onClick={closePanel} />
+                            <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
+                                <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                    配置 OpenAI API Key
+                                </h4>
+                                <p className="text-[10px] text-slate-500 mb-3 leading-normal">
+                                    配置您自己的 API Key 后，系统将优先使用该 Key 进行处理。Key 将仅保存在您的浏览器本地。
+                                </p>
+                                <div className="space-y-3">
+                                    <input
+                                        type="password"
+                                        value={tempApiKey}
+                                        onChange={(e) => setTempApiKey(e.target.value)}
+                                        placeholder="sk-..."
+                                        className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 p-2 bg-slate-50"
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={closePanel}
+                                            className="flex-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition-colors"
+                                        >
+                                            取消
+                                        </button>
+                                        <button
+                                            onClick={saveApiKey}
+                                            disabled={isValidatingKey}
+                                            className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {isValidatingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                            验证并确认
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        </header>
+    );
+};
