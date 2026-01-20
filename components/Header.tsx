@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                 <div className="relative">
                     <button
                         onClick={showApiKeyPanel ? closePanel : openPanel}
-                        className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-medium transition-all ${userApiKey ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'} hover:shadow-sm active:scale-95`}
+                        className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-medium transition-all ${userApiKey ? 'bg-transparent hover:bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-transparent hover:bg-primary-50 text-primary-700 ring-1 ring-primary-200'} hover:shadow-sm active:scale-95`}
                     >
                         OPENAI API KEY
                     </button>
