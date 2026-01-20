@@ -11,6 +11,7 @@ interface SubtitleItemProps {
     onEditStart: (text: string) => void;
     onEditChange: (text: string) => void;
     onEditSave: () => void;
+    isSubtitleOnly?: boolean;
 }
 
 export const SubtitleItem: React.FC<SubtitleItemProps> = ({
@@ -21,7 +22,8 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
     onJump,
     onEditStart,
     onEditChange,
-    onEditSave
+    onEditSave,
+    isSubtitleOnly
 }) => {
     const textParts = cap.text.split('\n');
     const isBilingual = textParts.length > 1;
@@ -50,7 +52,16 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
                     />
                 ) : (
                     <div className={`text-sm leading-relaxed break-words ${isActive ? 'text-primary-900' : 'text-slate-700'}`}>
-                        {isBilingual ? (
+                        {isSubtitleOnly ? (
+                            <div className="flex -mx-4 h-full min-h-[40px]">
+                                <div className="flex-1 px-4 border-r border-slate-100 py-1">
+                                    {textParts[0]}
+                                </div>
+                                <div className="flex-1 px-4 py-1 text-primary-700">
+                                    {textParts[1] || <span className="text-slate-300 italic text-[11px]">等待翻译...</span>}
+                                </div>
+                            </div>
+                        ) : isBilingual ? (
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
                                     <span className="text-[10px] text-slate-400 uppercase block mb-1 ">Original</span>

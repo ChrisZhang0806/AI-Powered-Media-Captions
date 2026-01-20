@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat } from './types';
-import { generateCaptionsStream, translateSegments, CaptionMode, ProgressInfo, SegmentStyle } from './services/openaiService';
+import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat, CaptionMode, ProgressInfo, SegmentStyle } from './types';
+import { generateCaptionsStream, translateSegments } from './services/openaiService';
 import { transcribeWithServer, checkServerHealth } from './services/serverService';
 import { parseCaptions } from './utils/captionUtils';
 import { detectLanguage } from './utils/helpers';
@@ -214,9 +214,16 @@ const App: React.FC = () => {
 
         setIsTranslating(true);
         setErrorMsg('');
+        const originalCaptions = [...captions]; // 保存原文备份
+
         try {
-            await translateSegments(captions, targetLang, styleTemp, (updatedChunks) => {
-                setCaptions(updatedChunks);
+            await translateSegments(originalCaptions, targetLang, styleTemp, (translatedChunks) => {
+                // 实时流式合并：原文 + 译文
+                const merged = originalCaptions.map((orig, i) => ({
+                    ...orig,
+                    text: `${orig.text}\n${translatedChunks[i]?.text || ''}`
+                }));
+                setCaptions(merged);
             }, apiKeyData.userApiKey);
             setCaptionMode('Bilingual');
         } catch (err: any) {
@@ -293,6 +300,7 @@ const App: React.FC = () => {
                         {/* Right Panel: Subtitle List */}
                         <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-12' : 'lg:col-span-7'}`}>
                             <SubtitleList
+                                isSubtitleOnly={!videoFile && captions.length > 0}
                                 captions={captions}
                                 activeCaption={activeCaption}
                                 videoMeta={videoMeta}

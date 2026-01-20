@@ -18,6 +18,7 @@ interface SubtitleListProps {
     bilingualExportSeparate: boolean;
     downloadDropdownFormat: ExportFormat | null;
     styleTemp: number;
+    isSubtitleOnly?: boolean;
 
     onReset: () => void;
     onJump: (time: string) => void;
@@ -46,6 +47,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     bilingualExportSeparate,
     downloadDropdownFormat,
     styleTemp,
+    isSubtitleOnly,
 
     onReset,
     onJump,
@@ -61,10 +63,6 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     setBilingualExportSeparate
 }) => {
     const listRef = useRef<HTMLDivElement>(null);
-
-    // Expose scroll to bottom functionality if needed by parent via ref, or just handle auto-scroll here?
-    // Parent handles scroll to bottom on new captions effectively.
-    // But we might need to expose it. For now let's keep it simple.
 
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
@@ -150,7 +148,14 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
 
             <div className="flex bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider px-4 py-2">
                 <div className="w-32 flex-shrink-0">播放位置</div>
-                <div className="flex-1 px-4">文本内容</div>
+                {isSubtitleOnly ? (
+                    <>
+                        <div className="flex-1 px-4 border-r border-slate-200">原文 ({sourceLang})</div>
+                        <div className="flex-1 px-4">译文 ({targetLang})</div>
+                    </>
+                ) : (
+                    <div className="flex-1 px-4">文本内容</div>
+                )}
                 <div className="w-16 text-right">管理</div>
             </div>
 
@@ -169,6 +174,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                                 isActive={activeCaption === cap.text}
                                 isEditing={editingId === cap.id}
                                 editText={editText}
+                                isSubtitleOnly={isSubtitleOnly}
                                 onJump={onJump}
                                 onEditStart={(text) => onEditStart(cap.id, text)}
                                 onEditChange={onEditChange}

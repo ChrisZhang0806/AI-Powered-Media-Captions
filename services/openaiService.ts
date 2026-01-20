@@ -269,6 +269,7 @@ export const generateCaptionsStream = async (
                             if (mode === 'Translation') {
                                 return { ...cap, text: t.text };
                             } else {
+                                // 确保不重复添加原句（如果 t.text 已经包含了原句）
                                 return { ...cap, text: `${cap.text}\n${t.text}` };
                             }
                         });
@@ -358,14 +359,14 @@ export const translateSegments = async (
 
     let styleDesc = "";
     if (styleStrength <= 33) {
-        // 直译模式
-        styleDesc = "Literal and precise. Maintain the original sentence structure as much as possible.";
+        // 强化直译 (模拟低温)
+        styleDesc = "LITERAL. Translate with technical precision. DO NOT use creative synonyms. Keep the sentence structure identical to the source. If the source is a fragment, keep it as a fragment. Strictly avoid adding any personal interpretations.";
     } else if (styleStrength <= 66) {
-        // 平衡模式
-        styleDesc = "Balanced. Natural sounding in the target language while remaining faithful to the original meaning.";
+        // 强化平衡
+        styleDesc = "BALANCED. Focus on clarity and readability. Use standard, clear language that would be appropriate for a general audience. Ensure the tone is natural while remaining faithful to the core meaning.";
     } else {
-        // 意译/创意模式
-        styleDesc = "Creative and Stylized. Localize idioms, prioritize emotional impact and flow over word-for-word accuracy. Use slang if appropriate for the context.";
+        // 强化创意 (模拟高温)
+        styleDesc = "CREATIVE. Act as a professional localizer. Rewrite metaphors into culturally equivalent ones. Use informal, catchy, or dramatic language suitable for social media or entertainment. Prioritize 'vibe', emotional impact, and natural flow over word-for-word accuracy.";
     }
 
     // 检测源语言（简单推断）
@@ -386,7 +387,7 @@ export const translateSegments = async (
 
         try {
             const response = await client.chat.completions.create({
-                model: 'gpt-4o-mini',
+                model: 'gpt-5-nano',
                 messages: [
                     {
                         role: 'system',
@@ -403,7 +404,7 @@ Your goal is to translate the provided subtitle blocks according to this style g
                         content: `Translate these subtitles:\n${JSON.stringify(inputData)}`
                     }
                 ],
-                temperature: styleStrength <= 33 ? 0.1 : styleStrength <= 66 ? 0.3 : 0.6,
+                // temperature: styleStrength <= 33 ? 0.1 : styleStrength <= 66 ? 0.3 : 0.6, // gpt-5-nano only supports default (1)
                 response_format: { type: "json_object" }
             });
 
@@ -418,13 +419,14 @@ Your goal is to translate the provided subtitle blocks according to this style g
                 const globalIndex = start + i;
                 translatedSegments[globalIndex] = {
                     ...seg,
-                    text: `${seg.text}\n${translatedText}`
+                    text: translatedText
                 };
             });
 
             onChunk?.([...translatedSegments]);
         } catch (err) {
             console.error('Batch translation error:', err);
+            throw err; // 向上抛出错误，让 UI 能捕捉到
         }
     };
 
@@ -451,7 +453,7 @@ export const refineSegments = async (
 
     try {
         const response = await client.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: 'gpt-5-nano',
             messages: [
                 {
                     role: 'system',
@@ -469,7 +471,7 @@ RULES:
                     content: JSON.stringify(segments)
                 }
             ],
-            temperature: 0.1,
+            // temperature: 0.1, // gpt-5-nano only supports default (1)
             response_format: { type: 'json_object' }
         });
 
