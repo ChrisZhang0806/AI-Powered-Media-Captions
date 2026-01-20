@@ -203,30 +203,26 @@ function smartSplit(segments, maxChars) {
         const isChinese = /[\u4e00-\u9fa5]/.test(text);
 
         // ==========================
-        // 中文断句策略 (阈值控制版本)
+        // 中文断句策略 (优化版)
         // ==========================
         if (isChinese) {
-            const MIN_LENGTH = 8;  // 最小行长：少于此值尝试合并
-            const MAX_LENGTH = 20; // 最大行长：超过此值必须断句
+            const MIN_LENGTH = 6;   // 允许更短的自然短语
+            const IDEAL_MIN = 12;   // 理想最小长度
+            const IDEAL_MAX = 20;   // 理想最大长度
+            const MAX_LENGTH = 28;  // 软上限
+            const ABSOLUTE_MAX = 38; // 硬上限：超过必须强制断开
 
-            // 1. 根据标点进行初步断句
-            const puncts = /[，。！？：—,.;:?!-]/;
-            let chunks = [];
+            // 1. 第一遍：按句子级标点断开 (。！？)
+            const sentenceBreaks = /[。！？]/;
+            const clauseBreaks = /[，、；：,.;:—]/;
+
+            let sentences = [];
             let lastIdx = 0;
 
             for (let i = 0; i < text.length; i++) {
                 const char = text[i];
-                if (puncts.test(char)) {
-                    // === 例外处理：数字中的标点 ===
-                    if ((char === '.' || char === ',' || char === ':') && i > 0 && i < text.length - 1) {
-                        const prev = text[i - 1];
-                        const next = text[i + 1];
-                        if (/\d/.test(prev) && /\d/.test(next)) {
-                            continue;
-                        }
-                    }
-
-                    chunks.push({
+                if (sentenceBreaks.test(char)) {
+                    sentences.push({
                         text: text.substring(lastIdx, i + 1).trim(),
                         startIdx: lastIdx,
                         endIdx: i + 1
@@ -235,14 +231,63 @@ function smartSplit(segments, maxChars) {
                 }
             }
             if (lastIdx < text.length) {
-                chunks.push({
+                sentences.push({
                     text: text.substring(lastIdx).trim(),
                     startIdx: lastIdx,
                     endIdx: text.length
                 });
             }
 
-            // 2. 应用阈值策略：合并过短的句子
+            // 2. 第二遍：对过长的句子按子句级标点进一步断开
+            let chunks = [];
+            for (const sentence of sentences) {
+                if (sentence.text.length <= MAX_LENGTH) {
+                    chunks.push(sentence);
+                    continue;
+                }
+
+                // 需要进一步断开
+                let subLastIdx = 0;
+                const sentenceText = sentence.text;
+
+                for (let i = 0; i < sentenceText.length; i++) {
+                    const char = sentenceText[i];
+
+                    // 跳过数字中的标点
+                    if ((char === '.' || char === ',' || char === ':') && i > 0 && i < sentenceText.length - 1) {
+                        const prev = sentenceText[i - 1];
+                        const next = sentenceText[i + 1];
+                        if (/\d/.test(prev) && /\d/.test(next)) {
+                            continue;
+                        }
+                    }
+
+                    if (clauseBreaks.test(char)) {
+                        const chunkText = sentenceText.substring(subLastIdx, i + 1).trim();
+                        if (chunkText.length > 0) {
+                            chunks.push({
+                                text: chunkText,
+                                startIdx: sentence.startIdx + subLastIdx,
+                                endIdx: sentence.startIdx + i + 1
+                            });
+                        }
+                        subLastIdx = i + 1;
+                    }
+                }
+
+                if (subLastIdx < sentenceText.length) {
+                    const remainingText = sentenceText.substring(subLastIdx).trim();
+                    if (remainingText.length > 0) {
+                        chunks.push({
+                            text: remainingText,
+                            startIdx: sentence.startIdx + subLastIdx,
+                            endIdx: sentence.endIdx
+                        });
+                    }
+                }
+            }
+
+            // 3. 第三遍：适度合并过短的孤儿句 (只合并极短的，如 < 4 字符)
             let merged = [];
             let buffer = null;
 
@@ -251,48 +296,57 @@ function smartSplit(segments, maxChars) {
 
                 if (buffer === null) {
                     buffer = { ...chunk };
-                } else {
-                    // 尝试将当前块合并到 buffer
-                    const combinedLength = buffer.text.length + chunk.text.length;
-
-                    if (combinedLength <= MAX_LENGTH) {
-                        // 合并
-                        buffer.text = buffer.text + chunk.text;
-                        buffer.endIdx = chunk.endIdx;
-                    } else {
-                        // 无法合并，输出 buffer 并开始新的
-                        merged.push(buffer);
-                        buffer = { ...chunk };
-                    }
+                    continue;
                 }
 
-                // 如果 buffer 已经达到最小长度，可以输出
-                if (buffer && buffer.text.length >= MIN_LENGTH) {
+                const combinedLength = buffer.text.length + chunk.text.length;
+
+                // 只在极短 + 合并后仍在理想范围内时才合并
+                if (buffer.text.length < 4 && combinedLength <= IDEAL_MAX) {
+                    buffer.text = buffer.text + chunk.text;
+                    buffer.endIdx = chunk.endIdx;
+                } else if (chunk.text.length < 4 && combinedLength <= IDEAL_MAX) {
+                    buffer.text = buffer.text + chunk.text;
+                    buffer.endIdx = chunk.endIdx;
+                } else {
+                    // 不合并，输出 buffer
                     merged.push(buffer);
-                    buffer = null;
+                    buffer = { ...chunk };
                 }
             }
 
-            // 处理剩余的 buffer
             if (buffer) {
-                // 如果还有剩余，尝试合并到最后一个输出
-                if (merged.length > 0) {
-                    const last = merged[merged.length - 1];
-                    const combinedLength = last.text.length + buffer.text.length;
-                    if (combinedLength <= MAX_LENGTH) {
-                        last.text = last.text + buffer.text;
-                        last.endIdx = buffer.endIdx;
-                    } else {
-                        merged.push(buffer);
-                    }
+                merged.push(buffer);
+            }
+
+            // 4. 第四遍：强制拆分超长行
+            let finalChunks = [];
+            for (const chunk of merged) {
+                if (chunk.text.length <= ABSOLUTE_MAX) {
+                    finalChunks.push(chunk);
                 } else {
-                    merged.push(buffer);
+                    // 强制按字符数拆分
+                    const chunkText = chunk.text;
+                    let start = 0;
+                    while (start < chunkText.length) {
+                        const end = Math.min(start + MAX_LENGTH, chunkText.length);
+                        const partText = chunkText.substring(start, end).trim();
+                        if (partText.length > 0) {
+                            const ratio = chunkText.length > 0 ? (end - start) / chunkText.length : 1;
+                            finalChunks.push({
+                                text: partText,
+                                startIdx: chunk.startIdx + Math.floor((start / chunkText.length) * (chunk.endIdx - chunk.startIdx)),
+                                endIdx: chunk.startIdx + Math.floor((end / chunkText.length) * (chunk.endIdx - chunk.startIdx))
+                            });
+                        }
+                        start = end;
+                    }
                 }
             }
 
-            // 3. 输出结果
+            // 5. 输出结果
             const duration = seg.end - seg.start;
-            merged.forEach(c => {
+            finalChunks.forEach(c => {
                 if (c.text.length > 0) {
                     result.push({
                         start: seg.start + (c.startIdx / text.length) * duration,

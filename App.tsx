@@ -108,6 +108,14 @@ const App: React.FC = () => {
     // AI 处理逻辑
     const handleProcess = async () => {
         if (!videoFile) return;
+
+        // 检查是否有 API Key
+        if (!apiKeyData.userApiKey) {
+            setErrorMsg('请先配置 OpenAI API Key 才能使用转录功能');
+            apiKeyData.openPanel();
+            return;
+        }
+
         setStatus(AppStatus.PROCESSING);
         setErrorMsg('');
         setCaptions([]);
@@ -196,6 +204,14 @@ const App: React.FC = () => {
 
     const handleTranslateExisting = async () => {
         if (captions.length === 0 || isTranslating || sourceLang === targetLang) return;
+
+        // 检查是否有 API Key
+        if (!apiKeyData.userApiKey) {
+            setErrorMsg('请先配置 OpenAI API Key 才能使用翻译功能');
+            apiKeyData.openPanel();
+            return;
+        }
+
         setIsTranslating(true);
         setErrorMsg('');
         try {
@@ -228,7 +244,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-            <Header onReset={handleReset} apiKeyData={apiKeyData} />
+            <Header onReset={handleReset} apiKeyData={apiKeyData} onApiKeySuccess={() => setErrorMsg('')} />
 
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {errorMsg && (

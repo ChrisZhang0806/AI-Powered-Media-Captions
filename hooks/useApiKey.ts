@@ -19,7 +19,7 @@ export const useApiKey = () => {
         setKeyError('');
     }, []);
 
-    const saveApiKey = useCallback(async () => {
+    const saveApiKey = useCallback(async (onSuccess?: () => void) => {
         if (!tempApiKey.trim()) {
             setUserApiKey('');
             localStorage.removeItem('openai_api_key');
@@ -35,9 +35,10 @@ export const useApiKey = () => {
             setUserApiKey(tempApiKey);
             localStorage.setItem('openai_api_key', tempApiKey);
             setShowApiKeyPanel(false);
+            onSuccess?.(); // 调用成功回调
             return true;
         } else {
-            setKeyError('API Key 验证失败，请检查是否输入正确。');
+            setKeyError('API Key 无效或已过期，请检查后重试');
             return false;
         }
     }, [tempApiKey]);

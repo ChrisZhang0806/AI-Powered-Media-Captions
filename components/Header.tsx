@@ -5,15 +5,17 @@ import { useApiKey } from '../hooks/useApiKey';
 interface HeaderProps {
     onReset: () => void;
     apiKeyData: ReturnType<typeof useApiKey>;
+    onApiKeySuccess?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
+export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuccess }) => {
     const {
         userApiKey,
         showApiKeyPanel,
         tempApiKey,
         setTempApiKey,
         isValidatingKey,
+        keyError,
         openPanel,
         closePanel,
         saveApiKey,
@@ -72,9 +74,12 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                         value={tempApiKey}
                                         onChange={(e) => setTempApiKey(e.target.value)}
                                         placeholder="sk-..."
-                                        className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 p-2 bg-slate-50"
+                                        className={`w-full text-xs border rounded-lg focus:ring-primary-500 p-2 bg-slate-50 ${keyError ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
                                         autoFocus
                                     />
+                                    {keyError && (
+                                        <p className="text-[10px] text-red-600 mt-1">{keyError}</p>
+                                    )}
                                     <div className="flex gap-2">
                                         {userApiKey ? (
                                             <button
@@ -87,8 +92,8 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                                     }
                                                 }}
                                                 className={`flex-1 px-3 py-1.5 border rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${isConfirmingDelete
-                                                        ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
-                                                        : 'border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
+                                                    ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
+                                                    : 'border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
                                                     }`}
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
@@ -103,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                             </button>
                                         )}
                                         <button
-                                            onClick={saveApiKey}
+                                            onClick={() => saveApiKey(onApiKeySuccess)}
                                             disabled={isValidatingKey}
                                             className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
                                         >
