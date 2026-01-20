@@ -3,7 +3,7 @@ import { CaptionSegment } from '../types';
 import { extractAudio, segmentAudioStream, isVideoFile } from '../utils/audioUtils';
 
 const openai = new OpenAI({
-    apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+    apiKey: import.meta.env.VITE_OPENAI_API_KEY || 'dummy_key_for_init',
     dangerouslyAllowBrowser: true // 允许在浏览器中使用（仅用于演示）
 });
 
