@@ -29,9 +29,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 初始化 OpenAI
+// 初始化 OpenAI (如果环境变量没设置，允许空 Key 启动，后续请求可以使用用户提供的 Key)
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: process.env.OPENAI_API_KEY || 'dummy_key'
 });
 
 // 配置文件上传
