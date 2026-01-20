@@ -203,10 +203,13 @@ function smartSplit(segments, maxChars) {
         const isChinese = /[\u4e00-\u9fa5]/.test(text);
 
         // ==========================
-        // 中文断句策略 (按用户最新要求)
+        // 中文断句策略 (阈值控制版本)
         // ==========================
         if (isChinese) {
-            // 1. 根据标点进行断句 (逗号，句号，问号，感叹号，冒号，破折号)
+            const MIN_LENGTH = 8;  // 最小行长：少于此值尝试合并
+            const MAX_LENGTH = 20; // 最大行长：超过此值必须断句
+
+            // 1. 根据标点进行初步断句
             const puncts = /[，。！？：—,.;:?!-]/;
             let chunks = [];
             let lastIdx = 0;
@@ -214,39 +217,14 @@ function smartSplit(segments, maxChars) {
             for (let i = 0; i < text.length; i++) {
                 const char = text[i];
                 if (puncts.test(char)) {
-                    // === 例外处理开始 ===
-
-                    // 1. 小数点保护 (例如 6.1%)
-                    // 如果是英文句号 . 且前后都是数字，不断句
-                    if (char === '.' && i > 0 && i < text.length - 1) {
+                    // === 例外处理：数字中的标点 ===
+                    if ((char === '.' || char === ',' || char === ':') && i > 0 && i < text.length - 1) {
                         const prev = text[i - 1];
                         const next = text[i + 1];
                         if (/\d/.test(prev) && /\d/.test(next)) {
                             continue;
                         }
                     }
-
-                    // 2. 千位分隔符保护 (例如 1,000)
-                    // 如果是英文逗号 , 且前后都是数字，不断句
-                    if (char === ',' && i > 0 && i < text.length - 1) {
-                        const prev = text[i - 1];
-                        const next = text[i + 1];
-                        if (/\d/.test(prev) && /\d/.test(next)) {
-                            continue;
-                        }
-                    }
-
-                    // 3. 时间冒号保护 (例如 12:30)
-                    // 如果是英文冒号 : 且前后都是数字，不断句
-                    if (char === ':' && i > 0 && i < text.length - 1) {
-                        const prev = text[i - 1];
-                        const next = text[i + 1];
-                        if (/\d/.test(prev) && /\d/.test(next)) {
-                            continue;
-                        }
-                    }
-
-                    // === 例外处理结束 ===
 
                     chunks.push({
                         text: text.substring(lastIdx, i + 1).trim(),
@@ -264,17 +242,55 @@ function smartSplit(segments, maxChars) {
                 });
             }
 
-            // 2. 发现少于 4 个字，与后面合并
+            // 2. 应用阈值策略：合并过短的句子
             let merged = [];
+            let buffer = null;
+
             for (let i = 0; i < chunks.length; i++) {
-                if (chunks[i].text.length < 4 && i < chunks.length - 1) {
-                    chunks[i + 1].text = chunks[i].text + chunks[i + 1].text;
-                    chunks[i + 1].startIdx = chunks[i].startIdx;
+                const chunk = chunks[i];
+
+                if (buffer === null) {
+                    buffer = { ...chunk };
                 } else {
-                    merged.push(chunks[i]);
+                    // 尝试将当前块合并到 buffer
+                    const combinedLength = buffer.text.length + chunk.text.length;
+
+                    if (combinedLength <= MAX_LENGTH) {
+                        // 合并
+                        buffer.text = buffer.text + chunk.text;
+                        buffer.endIdx = chunk.endIdx;
+                    } else {
+                        // 无法合并，输出 buffer 并开始新的
+                        merged.push(buffer);
+                        buffer = { ...chunk };
+                    }
+                }
+
+                // 如果 buffer 已经达到最小长度，可以输出
+                if (buffer && buffer.text.length >= MIN_LENGTH) {
+                    merged.push(buffer);
+                    buffer = null;
                 }
             }
 
+            // 处理剩余的 buffer
+            if (buffer) {
+                // 如果还有剩余，尝试合并到最后一个输出
+                if (merged.length > 0) {
+                    const last = merged[merged.length - 1];
+                    const combinedLength = last.text.length + buffer.text.length;
+                    if (combinedLength <= MAX_LENGTH) {
+                        last.text = last.text + buffer.text;
+                        last.endIdx = buffer.endIdx;
+                    } else {
+                        merged.push(buffer);
+                    }
+                } else {
+                    merged.push(buffer);
+                }
+            }
+
+            // 3. 输出结果
             const duration = seg.end - seg.start;
             merged.forEach(c => {
                 if (c.text.length > 0) {
@@ -370,23 +386,7 @@ function smartSplit(segments, maxChars) {
 
         const isChinese = /[\u4e00-\u9fa5]/.test(current.text);
 
-        // 如果是中文且长度小于 6 (提高阈值)，尝试向后合并
-        if (isChinese && current.text.length < 6) {
-            const next = result[i + 1];
-            if (next) {
-                // 合并逻辑：
-                // 当前行的时间结束 = 下一行的结束
-                // 文本 = 当前 + 下一行
-                // 跳过下一个循环
-
-                // 只有当合并后的长度 < 25 才合并 (避免合并出巨无霸长句)
-                if ((current.text.length + next.text.length) < 25) {
-                    next.start = current.start; // 下一句的开始时间提前到当前句开始
-                    next.text = current.text + next.text;
-                    continue; // 实际上是把 current 丢弃，把数据给 next，下一轮循环处理 next
-                }
-            }
-        }
+        // 中文不再自动合并短句，直接保留原始断句
 
         // 原有的英文合并逻辑
         if (!isChinese) {

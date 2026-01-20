@@ -37,6 +37,52 @@ const truncateFileName = (name: string, maxLen = 40): string => {
     return `${front}...${back}${ext}`;
 };
 
+// 辅助函数：检测字幕文本的语言
+const detectLanguage = (texts: string[]): string => {
+    const sampleText = texts.slice(0, 20).join(' '); // 取前20条字幕作为样本
+
+    // 统计各语言字符数量
+    let chineseCount = 0;
+    let japaneseCount = 0;
+    let koreanCount = 0;
+    let latinCount = 0;
+
+    for (const char of sampleText) {
+        const code = char.charCodeAt(0);
+        // 中文字符范围
+        if ((code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF)) {
+            chineseCount++;
+        }
+        // 日文假名范围 (平假名 + 片假名)
+        else if ((code >= 0x3040 && code <= 0x309F) || (code >= 0x30A0 && code <= 0x30FF)) {
+            japaneseCount++;
+        }
+        // 韩文字符范围
+        else if (code >= 0xAC00 && code <= 0xD7AF) {
+            koreanCount++;
+        }
+        // 拉丁字母范围
+        else if ((code >= 0x0041 && code <= 0x005A) || (code >= 0x0061 && code <= 0x007A)) {
+            latinCount++;
+        }
+    }
+
+    // 如果有日文假名，优先判断为日文（因为日文也包含汉字）
+    if (japaneseCount > 5) {
+        return 'Japanese';
+    }
+    // 韩文
+    if (koreanCount > chineseCount && koreanCount > latinCount) {
+        return 'Korean';
+    }
+    // 中文
+    if (chineseCount > latinCount && chineseCount > 10) {
+        return 'Chinese';
+    }
+    // 默认返回英文（拉丁字母为主的语言）
+    return 'English';
+};
+
 const App: React.FC = () => {
     const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
     const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -194,6 +240,13 @@ const App: React.FC = () => {
 
             if (parsedCaptions.length > 0) {
                 setCaptions(parsedCaptions);
+                // 自动检测字幕语言
+                const detectedLang = detectLanguage(parsedCaptions.map(c => c.text));
+                setSourceLang(detectedLang);
+                // 如果检测到的语言与目标语言相同，自动切换目标语言
+                if (detectedLang === targetLang) {
+                    setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
+                }
                 setVideoFile(null);
                 setVideoMeta({
                     name: file.name,
@@ -700,7 +753,6 @@ const App: React.FC = () => {
                                 <div className="flex items-center gap-2 pb-1 sm:pb-0">
                                     {/* 语言选择 */}
                                     <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg shrink-0">
-                                        <span className="text-[9px] text-slate-400 uppercase">From</span>
                                         <select
                                             value={sourceLang}
                                             onChange={(e) => setSourceLang(e.target.value)}
@@ -709,7 +761,6 @@ const App: React.FC = () => {
                                             {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                                         </select>
                                         <ChevronRight className="w-3 h-3 text-slate-300" />
-                                        <span className="text-[9px] text-slate-400 uppercase">To</span>
                                         <select
                                             value={targetLang}
                                             onChange={(e) => setTargetLang(e.target.value)}
@@ -721,14 +772,14 @@ const App: React.FC = () => {
 
                                     {/* 风格平衡器 */}
                                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg shrink-0">
-                                        <Sliders className="w-3 h-3 text-slate-400" />
-                                        <span className="text-[10px] text-slate-500 min-w-[32px]">{getStyleLabel(styleTemp)}</span>
+                                        <span className="text-[10px] text-slate-500">直译</span>
                                         <input
                                             type="range" min="0" max="1" step="0.1"
                                             value={styleTemp}
                                             onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
                                             className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
                                         />
+                                        <span className="text-[10px] text-slate-500">创意</span>
                                     </div>
 
                                     <div className="flex-1" />
