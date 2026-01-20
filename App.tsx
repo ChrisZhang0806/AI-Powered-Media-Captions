@@ -241,7 +241,7 @@ const App: React.FC = () => {
                 {!videoFile && captions.length === 0 ? (
                     <FileUploader onFileSelect={processFile} />
                 ) : (
-                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-12'} gap-6 h-[calc(100vh-100px)]`}>
+                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-12'} gap-6 h-[calc(100vh-124px)]`}>
                         {/* Left Panel: Media & Processing Controls */}
                         {(!(!videoFile && captions.length > 0)) && (
                             <div className="lg:col-span-5 flex flex-col gap-4 h-full">

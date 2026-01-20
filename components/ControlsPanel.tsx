@@ -51,8 +51,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
     const showTranslationSettings = captionMode !== 'Original';
 
     return (
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4 flex-1 flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3 flex-1 flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-slate-50 rounded-lg">
                         {isAudio ? <Music className="w-4 h-4 text-slate-500" /> : <FileVideo className="w-4 h-4 text-slate-500" />}
@@ -63,8 +63,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
             </div>
 
             {status === AppStatus.IDLE && (
-                <div className="space-y-4">
-                    <div className="space-y-3">
+                <div className="space-y-3">
+                    <div className="space-y-1.5">
                         <label className="text-[11px] text-slate-400 uppercase">识别模式</label>
                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-100">
                             {(['Original', 'Translation', 'Bilingual'] as CaptionMode[]).map(m => (
@@ -92,31 +92,31 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                         />
                     </div>
 
-                    {showTranslationSettings && (
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="text-[11px] text-slate-400 uppercase">翻译语言</label>
-                                <select
-                                    value={targetLang}
-                                    onChange={(e) => setTargetLang(e.target.value)}
-                                    className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 py-2 bg-slate-50"
-                                >
-                                    {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
-                                </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[11px] text-slate-400 uppercase flex justify-between">
-                                    风格 <span>{getStyleLabel(styleTemp)}</span>
-                                </label>
+                    <div className={`grid grid-cols-2 gap-3 transition-opacity duration-200 ${showTranslationSettings ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'}`}>
+                        <div className="space-y-1">
+                            <label className="text-[11px] text-slate-400 uppercase">翻译语言</label>
+                            <select
+                                value={targetLang}
+                                onChange={(e) => setTargetLang(e.target.value)}
+                                className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 py-1.5 bg-slate-50"
+                            >
+                                {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[11px] text-slate-400 uppercase">翻译风格</label>
+                            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100 h-[34px]">
+                                <span className={`text-[10px] transition-colors ${styleTemp <= 0.3 ? 'text-primary-600 font-medium' : 'text-slate-400'}`}>直译</span>
                                 <input
                                     type="range" min="0" max="1" step="0.1"
                                     value={styleTemp}
                                     onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600 mt-2"
+                                    className="mx-3 flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800"
                                 />
+                                <span className={`text-[10px] transition-colors ${styleTemp >= 0.7 ? 'text-primary-600 font-medium' : 'text-slate-400'}`}>创意</span>
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     <Button onClick={onProcess} className="w-full py-3 text-sm shadow-lg shadow-primary-100 rounded-xl">开始 AI 解析</Button>
                 </div>

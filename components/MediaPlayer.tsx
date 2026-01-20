@@ -19,7 +19,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     if (!videoMeta) return null;
 
     return (
-        <div className={`rounded-xl overflow-hidden shadow-lg h-64 lg:h-80 ring-1 ring-slate-900/5 shrink-0 relative flex flex-col items-center justify-center ${isAudio ? 'bg-gradient-to-br from-slate-800 to-slate-950' : 'bg-black'}`}>
+        <div className={`rounded-xl overflow-hidden shadow-lg h-64 lg:h-72 ring-1 ring-slate-900/5 shrink-0 relative flex flex-col items-center justify-center ${isAudio ? 'bg-gradient-to-br from-slate-800 to-slate-950' : 'bg-black'}`}>
             {isAudio ? (
                 <div className="w-full h-full flex flex-col items-center justify-center p-6 gap-6 relative">
                     {/* 实时音频波形 */}

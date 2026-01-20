@@ -91,21 +91,23 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 pb-1 sm:pb-0">
+                <div className={`flex items-center gap-2 pb-1 sm:pb-0 transition-opacity duration-200 ${captions.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}>
                     {/* 语言选择 */}
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg shrink-0">
                         <select
+                            disabled={captions.length === 0}
                             value={sourceLang}
                             onChange={(e) => setSourceLang(e.target.value)}
-                            className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer"
+                            className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                         >
                             {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                         </select>
                         <ChevronRight className="w-3 h-3 text-slate-300" />
                         <select
+                            disabled={captions.length === 0}
                             value={targetLang}
                             onChange={(e) => setTargetLang(e.target.value)}
-                            className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer"
+                            className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                         >
                             {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                         </select>
@@ -115,10 +117,11 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg shrink-0">
                         <span className="text-[10px] text-slate-500">直译</span>
                         <input
+                            disabled={captions.length === 0}
                             type="range" min="0" max="1" step="0.1"
                             value={styleTemp}
                             onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
-                            className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+                            className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                         <span className="text-[10px] text-slate-500">创意</span>
                     </div>

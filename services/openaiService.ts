@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { CaptionSegment } from '../types';
+import { CaptionSegment, CaptionMode, SegmentStyle, ProgressInfo } from '../types';
 import { extractAudio, segmentAudioStream, isVideoFile } from '../utils/audioUtils';
 
 const openai = new OpenAI({
@@ -7,28 +7,11 @@ const openai = new OpenAI({
     dangerouslyAllowBrowser: true // 允许在浏览器中使用（仅用于演示）
 });
 
-export type CaptionMode = 'Original' | 'Translation' | 'Bilingual';
-
-/**
- * 断句风格
- */
-export type SegmentStyle = 'compact' | 'natural' | 'detailed';
-
 const SEGMENT_STYLE_PROMPTS: Record<SegmentStyle, string> = {
     compact: 'Extremely short sentences. Break frequently. Maximum 7 words per segment. Suitable for fast-paced subtitles.',
     natural: 'Break sentences into short, readable subtitle lines. Use commas to split long thoughts. Maximum 10-12 words per line.',
     detailed: 'Follow natural speech flow but avoid extremely long blocks. Break at logical pauses.'
 };
-
-/**
- * 进度信息接口
- */
-export interface ProgressInfo {
-    stage: 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'translating' | 'refining';
-    stageLabel: string;
-    progress: number; // 0-100
-    detail?: string;
-}
 
 /**
  * 将 Whisper 返回的时间戳格式转换为 SRT 格式

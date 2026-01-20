@@ -23,3 +23,14 @@ export interface VideoMetadata {
 }
 
 export type DownloadMode = 'bilingual' | 'original' | 'translated';
+
+export type CaptionMode = 'Original' | 'Translation' | 'Bilingual';
+
+export type SegmentStyle = 'compact' | 'natural' | 'detailed';
+
+export interface ProgressInfo {
+  stage: 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'translating' | 'refining';
+  stageLabel: string;
+  progress: number; // 0-100
+  detail?: string;
+}
