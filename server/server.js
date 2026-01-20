@@ -45,7 +45,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 * 1024 }, // 增加到 5GB
+    limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 增加到 20GB
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['video/', 'audio/'];
         if (allowedTypes.some(type => file.mimetype.startsWith(type))) {
@@ -192,6 +192,7 @@ async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natura
 
 /**
  * 语义感知智能切割长句
+ * 针对中文进行了专门优化：更短的句子、更自然的断点
  */
 function smartSplit(segments, maxChars) {
     const result = [];
@@ -201,12 +202,95 @@ function smartSplit(segments, maxChars) {
         const text = seg.text;
         const isChinese = /[\u4e00-\u9fa5]/.test(text);
 
-        // 长度足够短或中文，直接跳过
-        if (isChinese || text.length <= maxChars * 1.2) {
-            result.push(seg);
+        // ==========================
+        // 中文断句策略 (按用户最新要求)
+        // ==========================
+        if (isChinese) {
+            // 1. 根据标点进行断句 (逗号，句号，问号，感叹号，冒号，破折号)
+            const puncts = /[，。！？：—,.;:?!-]/;
+            let chunks = [];
+            let lastIdx = 0;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                if (puncts.test(char)) {
+                    // === 例外处理开始 ===
+
+                    // 1. 小数点保护 (例如 6.1%)
+                    // 如果是英文句号 . 且前后都是数字，不断句
+                    if (char === '.' && i > 0 && i < text.length - 1) {
+                        const prev = text[i - 1];
+                        const next = text[i + 1];
+                        if (/\d/.test(prev) && /\d/.test(next)) {
+                            continue;
+                        }
+                    }
+
+                    // 2. 千位分隔符保护 (例如 1,000)
+                    // 如果是英文逗号 , 且前后都是数字，不断句
+                    if (char === ',' && i > 0 && i < text.length - 1) {
+                        const prev = text[i - 1];
+                        const next = text[i + 1];
+                        if (/\d/.test(prev) && /\d/.test(next)) {
+                            continue;
+                        }
+                    }
+
+                    // 3. 时间冒号保护 (例如 12:30)
+                    // 如果是英文冒号 : 且前后都是数字，不断句
+                    if (char === ':' && i > 0 && i < text.length - 1) {
+                        const prev = text[i - 1];
+                        const next = text[i + 1];
+                        if (/\d/.test(prev) && /\d/.test(next)) {
+                            continue;
+                        }
+                    }
+
+                    // === 例外处理结束 ===
+
+                    chunks.push({
+                        text: text.substring(lastIdx, i + 1).trim(),
+                        startIdx: lastIdx,
+                        endIdx: i + 1
+                    });
+                    lastIdx = i + 1;
+                }
+            }
+            if (lastIdx < text.length) {
+                chunks.push({
+                    text: text.substring(lastIdx).trim(),
+                    startIdx: lastIdx,
+                    endIdx: text.length
+                });
+            }
+
+            // 2. 发现少于 4 个字，与后面合并
+            let merged = [];
+            for (let i = 0; i < chunks.length; i++) {
+                if (chunks[i].text.length < 4 && i < chunks.length - 1) {
+                    chunks[i + 1].text = chunks[i].text + chunks[i + 1].text;
+                    chunks[i + 1].startIdx = chunks[i].startIdx;
+                } else {
+                    merged.push(chunks[i]);
+                }
+            }
+
+            const duration = seg.end - seg.start;
+            merged.forEach(c => {
+                if (c.text.length > 0) {
+                    result.push({
+                        start: seg.start + (c.startIdx / text.length) * duration,
+                        end: seg.start + (c.endIdx / text.length) * duration,
+                        text: c.text
+                    });
+                }
+            });
             continue;
         }
 
+        // ==========================
+        // 英文断句逻辑 (保持原有)
+        // ==========================
         const words = text.split(/\s+/);
         let currentSegments = [];
         let remainingWords = [...words];
@@ -220,10 +304,9 @@ function smartSplit(segments, maxChars) {
                 const testText = currentText ? `${currentText} ${word}` : word;
 
                 if (testText.length > maxChars && currentText.length > 0) {
-                    // 寻找最佳断点：向后看一个词，如果当前词是标点，直接断
                     bestBreakIndex = i;
 
-                    // 优化：向前回溯寻找标点符号
+                    // 向前回溯寻找标点符号
                     for (let j = i; j > Math.max(0, i - 4); j--) {
                         if (/[.,?!;:]/.test(remainingWords[j - 1])) {
                             bestBreakIndex = j;
@@ -231,7 +314,7 @@ function smartSplit(segments, maxChars) {
                         }
                     }
 
-                    // 如果没找到标点，且当前断点后面是虚词，或者当前断点词本身是虚词，尝试调整
+                    // 避免在虚词处断开
                     if (bestBreakIndex === i) {
                         while (bestBreakIndex > Math.max(1, i - 3) &&
                             weakerWords.includes(remainingWords[bestBreakIndex - 1].toLowerCase().replace(/[^\w]/g, ''))) {
@@ -245,7 +328,7 @@ function smartSplit(segments, maxChars) {
                 bestBreakIndex = i + 1;
             }
 
-            // 如果最后剩下的单词太少（小于3个），且不是第一段，就全部合并到这一段
+            // 合并过短的尾部
             if (remainingWords.length - bestBreakIndex < 3 && currentSegments.length > 0) {
                 bestBreakIndex = remainingWords.length;
             }
@@ -254,42 +337,83 @@ function smartSplit(segments, maxChars) {
             currentSegments.push(segmentWords.join(' '));
         }
 
-        // 平衡时间戳
+        // 分配时间戳
         const totalChars = text.length;
-        let runningStartTime = seg.start;
-        const totalDuration = seg.end - seg.start;
+        let runningStartTimeEnglish = seg.start;
+        const totalDurationEnglish = seg.end - seg.start;
 
         currentSegments.forEach((textPart, index) => {
             const partRatio = textPart.length / totalChars;
-            const partDuration = totalDuration * partRatio;
-            const endTime = (index === currentSegments.length - 1) ? seg.end : runningStartTime + partDuration;
+            const partDuration = totalDurationEnglish * partRatio;
+            const endTime = (index === currentSegments.length - 1) ? seg.end : runningStartTimeEnglish + partDuration;
 
             result.push({
-                start: runningStartTime,
+                start: runningStartTimeEnglish,
                 end: endTime,
                 text: textPart.trim()
             });
-            runningStartTime = endTime;
+            runningStartTimeEnglish = endTime;
         });
     }
 
-    // 最后的清理：合并过短的孤儿行（针对跨段合并逻辑）
+    // ==========================
+    // 全局合并策略 (Global Merge)
+    // ==========================
+    // 解决跨 Segment 的孤儿行问题 (如 "说实话" 在一段结尾，无法合并到下一段开头)
     const finalResult = [];
-    for (let i = 0; i < result.length; i++) {
-        const current = result[i];
-        const next = result[i + 1];
 
-        // 如果下一行非常短（少于12个字符或2个单词），且不带终止标点，合并
-        if (next && next.text.split(' ').length <= 2 && !/[.?!]/.test(current.text) && (current.text + next.text).length < maxChars * 1.5) {
-            current.end = next.end;
-            current.text = `${current.text} ${next.text}`;
-            i++;
+    for (let i = 0; i < result.length; i++) {
+        let current = result[i];
+
+        // 1. 如果当前行本身就是空的（虽然前面有过滤，以防万一），跳过
+        if (!current.text) continue;
+
+        const isChinese = /[\u4e00-\u9fa5]/.test(current.text);
+
+        // 如果是中文且长度小于 6 (提高阈值)，尝试向后合并
+        if (isChinese && current.text.length < 6) {
+            const next = result[i + 1];
+            if (next) {
+                // 合并逻辑：
+                // 当前行的时间结束 = 下一行的结束
+                // 文本 = 当前 + 下一行
+                // 跳过下一个循环
+
+                // 只有当合并后的长度 < 25 才合并 (避免合并出巨无霸长句)
+                if ((current.text.length + next.text.length) < 25) {
+                    next.start = current.start; // 下一句的开始时间提前到当前句开始
+                    next.text = current.text + next.text;
+                    continue; // 实际上是把 current 丢弃，把数据给 next，下一轮循环处理 next
+                }
+            }
+        }
+
+        // 原有的英文合并逻辑
+        if (!isChinese) {
+            const next = result[i + 1];
+            if (next && !/[.?!]/.test(current.text) && (current.text.length + next.text.length) < maxChars * 1.5) {
+                const nextIsShort = next.text.split(' ').length <= 2;
+                if (nextIsShort) {
+                    current.end = next.end;
+                    current.text = `${current.text} ${next.text}`;
+                    i++;
+                }
+            }
         }
 
         finalResult.push(current);
     }
 
     return finalResult;
+}
+
+/**
+ * 辅助：将 SRT 时间戳转为秒数
+ */
+function parseFormattedTimestamp(ts) {
+    const [hms, ms] = ts.split(',');
+    const [h, m, s] = hms.split(':').map(Number);
+    return h * 3600 + m * 60 + s + (parseInt(ms) / 1000);
 }
 
 /**
@@ -436,7 +560,7 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
         task.progress = 100;
         task.stage = 'done';
 
-        console.log(`[Task ${taskId}] 完成，共 ${captions.length} 条字幕`);
+        console.log(`[Task ${taskId}] 完成，共 ${task.captions.length} 条字幕`);
 
     } catch (error) {
         console.error(`[Task ${taskId}] 错误:`, error);
@@ -509,7 +633,7 @@ if (fs.existsSync(distPath)) {
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ error: '文件太大，超过了 5GB 的限制' });
+            return res.status(400).json({ error: '文件太大，超过了 20GB 的限制' });
         }
         return res.status(400).json({ error: `上传错误: ${err.message}` });
     }

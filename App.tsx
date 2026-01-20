@@ -59,6 +59,7 @@ const App: React.FC = () => {
 
     // 实时同步相关状态
     const [activeCaption, setActiveCaption] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     // 进度状态
     const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
@@ -183,41 +184,62 @@ const App: React.FC = () => {
         return () => media.removeEventListener('timeupdate', handleTimeUpdate);
     }, [captions]);
 
+    const processFile = async (file: File) => {
+        const fileName = file.name.toLowerCase();
+
+        // 判断是否为字幕文件
+        if (fileName.endsWith('.srt') || fileName.endsWith('.vtt')) {
+            const text = await file.text();
+            const parsedCaptions = parseCaptions(text);
+
+            if (parsedCaptions.length > 0) {
+                setCaptions(parsedCaptions);
+                setVideoFile(null);
+                setVideoMeta({
+                    name: file.name,
+                    size: file.size,
+                    type: 'text/vtt',
+                    url: ''
+                });
+                setStatus(AppStatus.SUCCESS);
+                setErrorMsg('');
+            } else {
+                setErrorMsg('无效的字幕文件，请检查格式是否正确');
+            }
+            return;
+        }
+
+        setVideoFile(file);
+        setVideoMeta({
+            name: file.name, size: file.size, type: file.type, url: URL.createObjectURL(file)
+        });
+        setErrorMsg('');
+        setStatus(AppStatus.IDLE);
+        setCaptions([]);
+        setActiveCaption(null);
+    };
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            const fileName = file.name.toLowerCase();
+            await processFile(e.target.files[0]);
+        }
+    };
 
-            // 判断是否为字幕文件
-            if (fileName.endsWith('.srt') || fileName.endsWith('.vtt')) {
-                const text = await file.text();
-                const parsedCaptions = parseCaptions(text);
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
 
-                if (parsedCaptions.length > 0) {
-                    setCaptions(parsedCaptions);
-                    setVideoFile(null);
-                    setVideoMeta({
-                        name: file.name,
-                        size: file.size,
-                        type: 'text/vtt',
-                        url: ''
-                    });
-                    setStatus(AppStatus.SUCCESS);
-                    setErrorMsg('');
-                } else {
-                    setErrorMsg('无效的字幕文件，请检查格式是否正确');
-                }
-                return;
-            }
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
 
-            setVideoFile(file);
-            setVideoMeta({
-                name: file.name, size: file.size, type: file.type, url: URL.createObjectURL(file)
-            });
-            setErrorMsg('');
-            setStatus(AppStatus.IDLE);
-            setCaptions([]);
-            setActiveCaption(null);
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            await processFile(e.dataTransfer.files[0]);
         }
     };
 
@@ -395,7 +417,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-            <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <button
@@ -419,8 +441,8 @@ const App: React.FC = () => {
 
                         {showApiKeyPanel && (
                             <>
-                                <div className="fixed inset-0 z-40" onClick={() => setShowApiKeyPanel(false)} />
-                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
+                                <div className="fixed inset-0 z-[60]" onClick={() => setShowApiKeyPanel(false)} />
+                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
                                     <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
                                         配置 OpenAI API Key
                                     </h4>
@@ -475,8 +497,14 @@ const App: React.FC = () => {
                             <p className="text-lg text-slate-600 ">支持极速转写、语义断句、双语翻译及 SRT/VTT 字幕加工。</p>
                         </div>
                         <div
-                            className="group border-2 border-dashed border-slate-300 rounded-3xl p-12 text-center hover:border-primary-500 hover:bg-primary-50 transition-all cursor-pointer bg-white shadow-sm flex flex-col items-center justify-center min-h-[300px]"
+                            className={`group border-2 border-dashed rounded-3xl p-12 text-center transition-all cursor-pointer bg-white shadow-sm flex flex-col items-center justify-center min-h-[300px] ${isDragging
+                                ? 'border-primary-500 bg-primary-50 scale-[1.02]'
+                                : 'border-slate-300 hover:border-primary-500 hover:bg-primary-50'
+                                }`}
                             onClick={() => fileInputRef.current?.click()}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
                         >
                             <div className="p-4 bg-primary-100 text-primary-600 rounded-2xl group-hover:scale-110 transition-transform mb-6 flex gap-3">
                                 <FileVideo className="w-8 h-8" />
@@ -646,7 +674,7 @@ const App: React.FC = () => {
 
                         {/* Right Panel: Subtitle List */}
                         <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-12' : 'lg:col-span-7'} bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden`}>
-                            <div className="px-4 py-3 border-b border-slate-100 flex flex-col gap-3 bg-white sticky top-0 z-10">
+                            <div className="px-4 py-3 border-b border-slate-100 flex flex-col gap-3 bg-white sticky top-0 z-20">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         {!videoFile && captions.length > 0 && (
@@ -718,12 +746,18 @@ const App: React.FC = () => {
                                         <div className="relative">
                                             <button
                                                 disabled={captions.length === 0}
-                                                onClick={() => setDownloadDropdownFormat(downloadDropdownFormat === 'SRT' ? null : 'SRT')}
+                                                onClick={() => {
+                                                    if (captionMode === 'Original') {
+                                                        downloadCaptions(captions, 'SRT', videoMeta?.name.split('.')[0] || 'subtitles', 'original');
+                                                    } else {
+                                                        setDownloadDropdownFormat(downloadDropdownFormat === 'SRT' ? null : 'SRT');
+                                                    }
+                                                }}
                                                 className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] border border-slate-200 transition-colors disabled:opacity-40"
                                             >
-                                                <Download className="w-3 h-3" /> SRT <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'SRT' ? 'rotate-180' : ''}`} />
+                                                <Download className="w-3 h-3" /> SRT {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'SRT' ? 'rotate-180' : ''}`} />}
                                             </button>
-                                            {downloadDropdownFormat === 'SRT' && (
+                                            {captionMode !== 'Original' && downloadDropdownFormat === 'SRT' && (
                                                 <>
                                                     <div className="fixed inset-0 z-[60]" onClick={() => setDownloadDropdownFormat(null)} />
                                                     <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[70] py-1 overflow-hidden animate-in fade-in zoom-in slide-in-from-top-2 duration-100 origin-top-right">
@@ -753,12 +787,18 @@ const App: React.FC = () => {
                                         <div className="relative">
                                             <button
                                                 disabled={captions.length === 0}
-                                                onClick={() => setDownloadDropdownFormat(downloadDropdownFormat === 'VTT' ? null : 'VTT')}
+                                                onClick={() => {
+                                                    if (captionMode === 'Original') {
+                                                        downloadCaptions(captions, 'VTT', videoMeta?.name.split('.')[0] || 'subtitles', 'original');
+                                                    } else {
+                                                        setDownloadDropdownFormat(downloadDropdownFormat === 'VTT' ? null : 'VTT');
+                                                    }
+                                                }}
                                                 className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] border border-slate-200 transition-colors disabled:opacity-40"
                                             >
-                                                <Download className="w-3 h-3" /> VTT <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'VTT' ? 'rotate-180' : ''}`} />
+                                                <Download className="w-3 h-3" /> VTT {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'VTT' ? 'rotate-180' : ''}`} />}
                                             </button>
-                                            {downloadDropdownFormat === 'VTT' && (
+                                            {captionMode !== 'Original' && downloadDropdownFormat === 'VTT' && (
                                                 <>
                                                     <div className="fixed inset-0 z-[60]" onClick={() => setDownloadDropdownFormat(null)} />
                                                     <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[70] py-1 overflow-hidden animate-in fade-in zoom-in slide-in-from-top-2 duration-100 origin-top-right">
@@ -878,24 +918,18 @@ const App: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Footer Sync Status */}
-                            {captions.length > 0 && (
-                                <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                            {/* Footer Options (Only for Bilingual) */}
+                            {captions.length > 0 && captionMode === 'Bilingual' && (
+                                <div className="px-4 py-2 border-t border-slate-100 bg-white flex items-center justify-end">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                        <span className="text-[10px] text-slate-400 uppercase tracking-tighter">Real-time Playback Sync Active</span>
+                                        <span className="text-[10px] text-slate-400 uppercase">双语导出配置:</span>
+                                        <button
+                                            onClick={() => setBilingualExportSeparate(!bilingualExportSeparate)}
+                                            className="text-[10px] text-slate-600 hover:text-primary-600 bg-slate-50 hover:bg-primary-50 px-2 py-1 rounded border border-slate-200 hover:border-primary-200 transition-all"
+                                        >
+                                            {bilingualExportSeparate ? '分离为两个文件' : '合并为一个文件'}
+                                        </button>
                                     </div>
-                                    {captionMode === 'Bilingual' && (
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-[10px] text-slate-400 uppercase">双语导出:</span>
-                                            <button
-                                                onClick={() => setBilingualExportSeparate(!bilingualExportSeparate)}
-                                                className="text-[10px] text-primary-600 bg-primary-50 px-2 py-0.5 rounded border border-primary-100"
-                                            >
-                                                {bilingualExportSeparate ? '拆分文件' : '合并文件'}
-                                            </button>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>
