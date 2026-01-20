@@ -523,10 +523,10 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-12'} gap-6 h-[calc(100vh-120px)]`}>
+                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-12'} gap-6 h-[calc(100vh-100px)]`}>
                         {/* Left Panel: Media & Real-time Preview */}
                         {(!(!videoFile && captions.length > 0)) && (
-                            <div className="lg:col-span-5 flex flex-col gap-4">
+                            <div className="lg:col-span-5 flex flex-col gap-4 h-full">
                                 <div className={`rounded-xl overflow-hidden shadow-lg h-64 lg:h-80 ring-1 ring-slate-900/5 shrink-0 relative flex flex-col items-center justify-center ${isAudio ? 'bg-gradient-to-br from-slate-800 to-slate-950' : 'bg-black'}`}>
                                     {isAudio ? (
                                         <div className="w-full h-full flex flex-col items-center justify-center p-6 gap-6 relative">
@@ -568,8 +568,8 @@ const App: React.FC = () => {
                                     )}
                                 </div>
 
-                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4 flex-1 flex flex-col">
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
                                         <div className="flex items-center gap-3">
                                             <div className="p-2 bg-slate-50 rounded-lg">
                                                 {isAudio ? <Music className="w-4 h-4 text-slate-500" /> : <FileVideo className="w-4 h-4 text-slate-500" />}
