@@ -313,6 +313,13 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * 根路径访问，用于 Cloud Run 健康检查
+ */
+app.get('/', (req, res) => {
+    res.send('Caption Server is running.');
+});
+
+/**
  * 上传并处理视频
  */
 app.post('/api/transcribe', upload.single('file'), async (req, res) => {
@@ -505,8 +512,9 @@ app.use((err, req, res, next) => {
 });
 
 // 启动服务器
-app.listen(PORT, () => {
-    console.log(`🚀 Caption Server 运行在 http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Caption Server 运行在端口: ${PORT}`);
+    console.log(`🔗 外部访问请确保监听 0.0.0.0`);
     console.log(`📁 上传目录: ${UPLOAD_DIR}`);
     console.log(`📁 输出目录: ${OUTPUT_DIR}`);
 
