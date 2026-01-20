@@ -311,6 +311,28 @@ export const generateCaptionsStream = async (
 };
 
 /**
+ * 检测字幕的源语言
+ */
+const detectSourceLanguage = (segments: CaptionSegment[]): string => {
+    const text = segments.map(s => s.text).join(' ');
+
+    // 检测中文字符
+    const chineseChars = text.match(/[\u4e00-\u9fff]/g) || [];
+    // 检测日文字符（平假名和片假名）
+    const japaneseChars = text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || [];
+    // 检测韩文字符
+    const koreanChars = text.match(/[\uac00-\ud7af]/g) || [];
+
+    const totalChars = text.length;
+
+    if (chineseChars.length / totalChars > 0.1) return 'Chinese';
+    if (japaneseChars.length / totalChars > 0.1) return 'Japanese';
+    if (koreanChars.length / totalChars > 0.1) return 'Korean';
+
+    return 'English';
+};
+
+/**
  * 解析时间戳字符串为秒数
  */
 const parseTimestamp = (timestamp: string): number => {
@@ -331,14 +353,23 @@ export const translateSegments = async (
 ): Promise<CaptionSegment[]> => {
     if (segments.length === 0) return [];
 
-    let styleInstruction = "";
-    if (styleValue <= 0.3) {
-        styleInstruction = "DIRECT/LITERAL: Focus on absolute accuracy.";
-    } else if (styleValue >= 0.7) {
-        styleInstruction = "CREATIVE/IDIOMATIC: Focus on local cultural context.";
+    // 基于 styleValue (0-1) 映射到 0-100 的 styleStrength
+    const styleStrength = Math.round(styleValue * 100);
+
+    let styleDesc = "";
+    if (styleStrength <= 33) {
+        // 直译模式
+        styleDesc = "Literal and precise. Maintain the original sentence structure as much as possible.";
+    } else if (styleStrength <= 66) {
+        // 平衡模式
+        styleDesc = "Balanced. Natural sounding in the target language while remaining faithful to the original meaning.";
     } else {
-        styleInstruction = "BALANCED: Ensure natural flow.";
+        // 意译/创意模式
+        styleDesc = "Creative and Stylized. Localize idioms, prioritize emotional impact and flow over word-for-word accuracy. Use slang if appropriate for the context.";
     }
+
+    // 检测源语言（简单推断）
+    const sourceLang = detectSourceLanguage(segments);
 
     const translatedSegments = [...segments];
     const BATCH_SIZE = 5;
@@ -359,21 +390,20 @@ export const translateSegments = async (
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a professional subtitle translator. 
-Target Language: ${targetLanguage}
-Style: ${styleInstruction}
+                        content: `You are an expert subtitle translator specialized in converting ${sourceLang} content to ${targetLanguage}.
 
-CRITICAL: 
-1. Input is JSON array. 
-2. Return a JSON object with a "translations" array of objects {id: number, text: string}.
-3. One input segment must map to exactly one output segment. DO NOT MERGE.`
+Your goal is to translate the provided subtitle blocks according to this style guide: "${styleDesc}".
+
+- Preserve line breaks within the text if they make semantic sense.
+- Do not merge separate subtitle blocks.
+- Return the result strictly as a JSON object with a "translations" array where each object contains the 'id' (matching input) and 'text' (translated text).`
                     },
                     {
                         role: 'user',
-                        content: JSON.stringify(inputData)
+                        content: `Translate these subtitles:\n${JSON.stringify(inputData)}`
                     }
                 ],
-                temperature: Math.max(0.1, styleValue),
+                temperature: styleStrength <= 33 ? 0.1 : styleStrength <= 66 ? 0.3 : 0.6,
                 response_format: { type: "json_object" }
             });
 
