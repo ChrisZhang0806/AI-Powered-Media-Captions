@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, Check, ExternalLink } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Trash2 } from 'lucide-react';
 import { useApiKey } from '../hooks/useApiKey';
 
 interface HeaderProps {
@@ -17,7 +17,15 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
         openPanel,
         closePanel,
         saveApiKey,
+        removeApiKey,
     } = apiKeyData;
+
+    const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
+
+    const handleClosePanel = () => {
+        setIsConfirmingDelete(false);
+        closePanel();
+    };
 
     return (
         <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
@@ -41,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
 
                     {showApiKeyPanel && (
                         <>
-                            <div className="fixed inset-0 z-[60]" onClick={closePanel} />
+                            <div className="fixed inset-0 z-[60]" onClick={handleClosePanel} />
                             <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
                                 <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
                                     配置 OpenAI API Key
@@ -49,12 +57,12 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                 <p className="text-[10px] text-slate-500 mb-3 leading-normal">
                                     本工具需配置有效的 OpenAI API Key 才能使用。Key 将仅保存在您的浏览器本地。
                                     <a
-                                        href="https://platform.openai.com/settings/organization/usage"
+                                        href={userApiKey ? "https://platform.openai.com/settings/organization/usage" : "https://platform.openai.com/api-keys"}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-primary-600 hover:underline ml-1 inline-flex items-center gap-0.5"
                                     >
-                                        查看余额/用量
+                                        {userApiKey ? "查看余额/用量" : "获取 API Key"}
                                         <ExternalLink className="w-3 h-3" />
                                     </a>
                                 </p>
@@ -68,12 +76,32 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData }) => {
                                         autoFocus
                                     />
                                     <div className="flex gap-2">
-                                        <button
-                                            onClick={closePanel}
-                                            className="flex-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition-colors"
-                                        >
-                                            取消
-                                        </button>
+                                        {userApiKey ? (
+                                            <button
+                                                onClick={() => {
+                                                    if (isConfirmingDelete) {
+                                                        removeApiKey();
+                                                        setIsConfirmingDelete(false);
+                                                    } else {
+                                                        setIsConfirmingDelete(true);
+                                                    }
+                                                }}
+                                                className={`flex-1 px-3 py-1.5 border rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${isConfirmingDelete
+                                                        ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
+                                                        : 'border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
+                                                    }`}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                {isConfirmingDelete ? '确认删除' : '删除 Key'}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleClosePanel}
+                                                className="flex-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition-colors"
+                                            >
+                                                取消
+                                            </button>
+                                        )}
                                         <button
                                             onClick={saveApiKey}
                                             disabled={isValidatingKey}

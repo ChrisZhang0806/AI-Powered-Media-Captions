@@ -42,6 +42,13 @@ export const useApiKey = () => {
         }
     }, [tempApiKey]);
 
+    const removeApiKey = useCallback(() => {
+        setUserApiKey('');
+        setTempApiKey('');
+        localStorage.removeItem('openai_api_key');
+        setShowApiKeyPanel(false);
+    }, []);
+
     return {
         userApiKey,
         showApiKeyPanel,
@@ -52,5 +59,6 @@ export const useApiKey = () => {
         openPanel,
         closePanel,
         saveApiKey,
+        removeApiKey,
     };
 };
