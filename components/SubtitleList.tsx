@@ -65,7 +65,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     const listRef = useRef<HTMLDivElement>(null);
 
     return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[662px] overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex flex-col gap-3 bg-white sticky top-0 z-20">
                 <div className="flex items-center">
                     {/* 左侧：文件标题区域，最多占50%宽度 */}
@@ -150,7 +150,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                 </div>
             </div>
 
-            <div className="flex bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider px-4 py-2">
+            <div className="flex bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider px-4 py-2 sticky top-0 z-10 shrink-0">
                 <div className="w-32 flex-shrink-0">播放位置</div>
                 {isSubtitleOnly ? (
                     <>
@@ -163,7 +163,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                 <div className="w-16 text-right">管理</div>
             </div>
 
-            <div ref={listRef} className="flex-1 overflow-y-auto bg-white custom-scrollbar" id="subtitle-list-container">
+            <div ref={listRef} className="flex-1 overflow-y-auto bg-white custom-scrollbar min-h-0" id="subtitle-list-container">
                 {captions.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-300 py-12">
                         <Files className="w-12 h-12 mb-3 opacity-20" />

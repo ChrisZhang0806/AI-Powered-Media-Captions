@@ -51,7 +51,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
     const showTranslationSettings = captionMode !== 'Original';
 
     return (
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3 flex-1 flex flex-col">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3 h-[390px] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-slate-50 rounded-lg">
@@ -134,19 +134,9 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                                 {progressInfo.detail}
                             </p>
                         )}
-                        {progressInfo && progressInfo.progress > 0 && (
-                            <div className="w-full max-w-xs mx-auto mt-3">
-                                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-primary-500 transition-all duration-300 ease-out"
-                                        style={{ width: `${progressInfo.progress}%` }}
-                                    />
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1">{Math.round(progressInfo.progress)}%</p>
-                            </div>
-                        )}
+
                         <p className="text-[11px] text-primary-600 bg-primary-50 border border-primary-100 px-3 py-1 rounded-full mt-2 inline-block">
-                            已捕获 {captionsCount} 条字幕段
+                            {captionsCount > 0 ? `已捕获 ${captionsCount} 条字幕段` : '完成后显示字幕'}
                         </p>
                     </div>
                 </div>

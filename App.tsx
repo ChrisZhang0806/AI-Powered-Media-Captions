@@ -253,7 +253,7 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
             <Header onReset={handleReset} apiKeyData={apiKeyData} onApiKeySuccess={() => setErrorMsg('')} />
 
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden">
                 {errorMsg && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700">
                         <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -267,7 +267,7 @@ const App: React.FC = () => {
                     <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-6 h-[calc(100vh-124px)]`}>
                         {/* Left Panel: Media & Processing Controls */}
                         {(!(!videoFile && captions.length > 0)) && (
-                            <div className="lg:col-span-3 flex flex-col gap-4 h-full">
+                            <div className="lg:col-span-3 flex flex-col gap-4">
                                 <MediaPlayer
                                     videoMeta={videoMeta}
                                     isAudio={isAudio}

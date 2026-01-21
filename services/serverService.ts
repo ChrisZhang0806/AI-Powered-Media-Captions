@@ -1,5 +1,4 @@
-import { CaptionSegment } from '../types';
-import { CaptionMode, ProgressInfo, SegmentStyle } from './openaiService';
+import { CaptionSegment, CaptionMode, ProgressInfo, SegmentStyle } from '../types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -88,7 +87,9 @@ async function pollTaskStatus(
                     stage: task.stage === 'transcribing' ? 'transcribing' : 'extracting_audio',
                     stageLabel: stageLabels[task.stage] || task.stage,
                     progress: task.progress,
-                    detail: `已获取 ${task.captions.length} 条字幕`
+                    detail: task.captions.length > 0
+                        ? `已识别 ${task.captions.length} 条字幕`
+                        : 'AI 正在分析音频内容'
                 });
 
                 // 实时更新字幕

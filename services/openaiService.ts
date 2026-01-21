@@ -105,7 +105,7 @@ export const generateCaptionsStream = async (
                 stage: 'transcribing',
                 stageLabel: 'AI 正在识别语音...',
                 progress: Math.min(80, 30 + Math.random() * 40),
-                detail: '请稍候，正在转录中'
+                detail: 'AI 正在分析音频内容'
             });
         }, 1500);
 
