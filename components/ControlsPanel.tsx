@@ -88,7 +88,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                             value={contextPrompt}
                             onChange={(e) => setContextPrompt(e.target.value)}
                             placeholder="输入专有名词、人名或背景说明..."
-                            className="w-full h-14 text-[11px] border-slate-200 rounded-lg focus:ring-primary-500 p-2 bg-slate-50/50 resize-none font-normal leading-relaxed"
+                            className="w-full h-14 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-slate-200 focus:ring-0 p-2 bg-slate-50/50 resize-none font-normal leading-relaxed"
                         />
                     </div>
 

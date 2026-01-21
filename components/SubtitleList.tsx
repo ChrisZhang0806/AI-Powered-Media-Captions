@@ -67,25 +67,29 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex flex-col gap-3 bg-white sticky top-0 z-20">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        {!videoMeta && captions.length > 0 && (
-                            <div className="flex items-center gap-2 pr-3 border-r border-slate-100 mr-1">
-                                <button onClick={onReset} className="text-slate-400 hover:text-slate-600 p-1.5 transition-colors rounded-lg hover:bg-slate-100">
+                <div className="flex items-center">
+                    {/* 左侧：文件标题区域，最多占50%宽度 */}
+                    {videoMeta && captions.length > 0 && (
+                        <div className="flex items-center gap-2 pr-3 border-r border-slate-200 mr-3 max-w-[50%]">
+                            {isSubtitleOnly && (
+                                <button onClick={onReset} className="text-slate-400 hover:text-slate-600 p-1.5 transition-colors rounded-lg hover:bg-slate-100 -ml-2 shrink-0">
                                     <ChevronRight className="w-4 h-4 rotate-180" />
                                 </button>
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="w-4 h-4 text-primary-500 shrink-0" />
-                                    <span className="text-sm text-slate-900 whitespace-nowrap">{truncateFileName(videoMeta?.name || 'Subtitle File')}</span>
-                                </div>
+                            )}
+                            <div className="flex items-center gap-2 min-w-0">
+                                <FileText className="w-4 h-4 text-primary-500 shrink-0" />
+                                <span className="text-sm font-medium text-slate-700 truncate" title={videoMeta.name}>
+                                    {videoMeta.name}
+                                </span>
                             </div>
-                        )}
-                        <div className="flex items-center gap-2 shrink-0">
-                            <h3 className="text-sm text-slate-900">字幕预览</h3>
-                            <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-                                {captions.length}
-                            </span>
                         </div>
+                    )}
+                    {/* 右侧：字幕预览标签 */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <h3 className="text-sm text-slate-900">字幕预览</h3>
+                        <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                            {captions.length}
+                        </span>
                     </div>
                 </div>
 

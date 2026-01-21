@@ -264,10 +264,10 @@ const App: React.FC = () => {
                 {!videoFile && captions.length === 0 ? (
                     <FileUploader onFileSelect={processFile} />
                 ) : (
-                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-12'} gap-6 h-[calc(100vh-124px)]`}>
+                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-6 h-[calc(100vh-124px)]`}>
                         {/* Left Panel: Media & Processing Controls */}
                         {(!(!videoFile && captions.length > 0)) && (
-                            <div className="lg:col-span-5 flex flex-col gap-4 h-full">
+                            <div className="lg:col-span-3 flex flex-col gap-4 h-full">
                                 <MediaPlayer
                                     videoMeta={videoMeta}
                                     isAudio={isAudio}
@@ -298,7 +298,7 @@ const App: React.FC = () => {
                         )}
 
                         {/* Right Panel: Subtitle List */}
-                        <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-12' : 'lg:col-span-7'}`}>
+                        <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-8' : 'lg:col-span-5'}`}>
                             <SubtitleList
                                 isSubtitleOnly={!videoFile && captions.length > 0}
                                 captions={captions}
