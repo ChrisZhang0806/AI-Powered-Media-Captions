@@ -41,6 +41,9 @@ export const detectLanguage = (texts: string[]): string => {
     let japaneseCount = 0;
     let koreanCount = 0;
     let latinCount = 0;
+    let arabicCount = 0;
+    let russianCount = 0;
+    let thaiCount = 0;
 
     for (const char of sampleText) {
         const code = char.charCodeAt(0);
@@ -56,27 +59,35 @@ export const detectLanguage = (texts: string[]): string => {
         else if (code >= 0xAC00 && code <= 0xD7AF) {
             koreanCount++;
         }
+        // 阿拉伯文
+        else if (code >= 0x0600 && code <= 0x06FF) {
+            arabicCount++;
+        }
+        // 俄文 (西里尔字母)
+        else if (code >= 0x0400 && code <= 0x04FF) {
+            russianCount++;
+        }
+        // 泰文
+        else if (code >= 0x0E00 && code <= 0x0E7F) {
+            thaiCount++;
+        }
         // 拉丁字母范围
         else if ((code >= 0x0041 && code <= 0x005A) || (code >= 0x0061 && code <= 0x007A)) {
             latinCount++;
         }
     }
 
-    // 如果有日文假名，优先判断为日文（因为日文也包含汉字）
-    if (japaneseCount > 5) {
-        return 'Japanese';
-    }
-    // 韩文
-    if (koreanCount > chineseCount && koreanCount > latinCount) {
-        return 'Korean';
-    }
-    // 中文
-    if (chineseCount > latinCount && chineseCount > 10) {
-        return 'Chinese';
-    }
-    // 默认返回英文（拉丁字母为主的语言）
+    // 优先级判断
+    if (arabicCount > 5) return 'Arabic';
+    if (russianCount > 5) return 'Russian';
+    if (thaiCount > 5) return 'Thai';
+    if (japaneseCount > 5) return 'Japanese';
+    if (koreanCount > chineseCount && koreanCount > latinCount) return 'Korean';
+    if (chineseCount > latinCount && chineseCount > 10) return 'Chinese';
+
+    // 默认返回英文（拉丁字母为主的语言，包括法、德、西、葡、意、越等）
     return 'English';
 };
 
 // 语言核心定义（作为 i18n key 和逻辑判断标识）
-export const LANGUAGES = ["Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish"];
+export const LANGUAGES = ["Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish", "Portuguese", "Arabic", "Russian", "Italian", "Vietnamese", "Thai"];

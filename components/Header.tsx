@@ -96,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                         {showApiKeyPanel && (
                             <>
                                 <div className="fixed inset-0 z-[60]" onClick={handleClosePanel} />
-                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
+                                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
                                     <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
                                         {t.configApiKey}
                                     </h4>
@@ -135,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                                             setIsConfirmingDelete(true);
                                                         }
                                                     }}
-                                                    className={`flex-1 px-3 py-1.5 border rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${isConfirmingDelete
+                                                    className={`flex-1 px-3 py-1.5 border rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap ${isConfirmingDelete
                                                         ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
                                                         : 'border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
                                                         }`}
@@ -154,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                             <button
                                                 onClick={() => saveApiKey(onApiKeySuccess)}
                                                 disabled={isValidatingKey}
-                                                className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
+                                                className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
                                             >
                                                 {isValidatingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                                                 {t.verifyAndConfirm}

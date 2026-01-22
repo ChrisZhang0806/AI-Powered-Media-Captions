@@ -87,7 +87,13 @@ export const translations = {
         langKorean: '韩文',
         langFrench: '法文',
         langGerman: '德文',
-        langSpanish: '西班牙文'
+        langSpanish: '西班牙文',
+        langPortuguese: '葡萄牙语',
+        langArabic: '阿拉伯语',
+        langRussian: '俄语',
+        langItalian: '意大利语',
+        langVietnamese: '越南语',
+        langThai: '泰语'
     },
     en: {
         brand: 'AI Media Captions',
@@ -175,7 +181,13 @@ export const translations = {
         langKorean: 'Korean',
         langFrench: 'French',
         langGerman: 'German',
-        langSpanish: 'Spanish'
+        langSpanish: 'Spanish',
+        langPortuguese: 'Portuguese',
+        langArabic: 'Arabic',
+        langRussian: 'Russian',
+        langItalian: 'Italian',
+        langVietnamese: 'Vietnamese',
+        langThai: 'Thai'
     }
 };
 
