@@ -40,6 +40,21 @@ const App: React.FC = () => {
     const [downloadDropdownFormat, setDownloadDropdownFormat] = useState<ExportFormat | null>(null);
     const [bilingualExportSeparate, setBilingualExportSeparate] = useState(false);
 
+    // Language Auto-switching logic
+    const prevSource = useRef(sourceLang);
+    const prevTarget = useRef(targetLang);
+    React.useEffect(() => {
+        if (sourceLang === targetLang) {
+            if (sourceLang !== prevSource.current) {
+                setTargetLang(sourceLang === 'Chinese' ? 'English' : 'Chinese');
+            } else if (targetLang !== prevTarget.current) {
+                setSourceLang(targetLang === 'Chinese' ? 'English' : 'Chinese');
+            }
+        }
+        prevSource.current = sourceLang;
+        prevTarget.current = targetLang;
+    }, [sourceLang, targetLang]);
+
     const [isTranslating, setIsTranslating] = useState(false);
 
     // Editing State
@@ -72,9 +87,7 @@ const App: React.FC = () => {
                 setCaptions(parsedCaptions);
                 const detectedLang = detectLanguage(parsedCaptions.map(c => c.text));
                 setSourceLang(detectedLang);
-                if (detectedLang === targetLang) {
-                    setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
-                }
+                setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
                 setVideoFile(null);
                 setVideoMeta({
                     name: file.name,
