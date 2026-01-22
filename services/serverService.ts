@@ -28,37 +28,64 @@ export const transcribeWithServer = async (
 ): Promise<void> => {
     const t = getTranslation(uiLanguage);
 
-    // 1. Upload file
-    onProgress?.({
-        stage: 'extracting_audio',
-        stageLabel: t.uploading,
-        progress: 5,
-        detail: uiLanguage === 'zh'
-            ? `文件大小: ${(file.size / 1024 / 1024).toFixed(1)} MB`
-            : `File size: ${(file.size / 1024 / 1024).toFixed(1)} MB`
-    });
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('segmentStyle', segmentStyle);
-    formData.append('contextPrompt', contextPrompt);
-    if (apiKey) formData.append('apiKey', apiKey);
-
-    const uploadResponse = await fetch(`${SERVER_URL}/api/transcribe`, {
-        method: 'POST',
-        body: formData
-    });
-
-    if (!uploadResponse.ok) {
-        try {
-            const errorData = await uploadResponse.json();
-            throw new Error(errorData.error || (uiLanguage === 'zh' ? '上传失败' : 'Upload failed'));
-        } catch (e: any) {
-            throw new Error(e.message || (uiLanguage === 'zh' ? '上传失败，请检查网络或文件大小' : 'Upload failed, check network or file size'));
+    const formatFileSize = (bytes: number): string => {
+        if (bytes >= 1024 * 1024 * 1024) {
+            return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
         }
-    }
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    };
 
-    const { taskId } = await uploadResponse.json();
+    const fileSizeStr = formatFileSize(file.size);
+
+    // 1. Upload file with progress tracking
+    const { taskId } = await new Promise<{ taskId: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${SERVER_URL}/api/transcribe`);
+
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+                const percent = Math.round((event.loaded / event.total) * 100);
+                onProgress?.({
+                    stage: 'extracting_audio',
+                    stageLabel: t.uploading,
+                    progress: Math.round(percent * 0.2), // Upload accounts for roughly 20% of total visual progress
+                    detail: uiLanguage === 'zh'
+                        ? `[${percent}%] 文件大小: ${fileSizeStr}`
+                        : `[${percent}%] File size: ${fileSizeStr}`
+                });
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    resolve(JSON.parse(xhr.responseText));
+                } catch (e) {
+                    reject(new Error('Invalid server response'));
+                }
+            } else {
+                try {
+                    const errorData = JSON.parse(xhr.responseText);
+                    reject(new Error(errorData.error || (uiLanguage === 'zh' ? '上传失败' : 'Upload failed')));
+                } catch (e) {
+                    reject(new Error(uiLanguage === 'zh' ? '上传失败' : 'Upload failed'));
+                }
+            }
+        };
+
+        xhr.onerror = () => {
+            reject(new Error(uiLanguage === 'zh' ? '网络错误，上传失败' : 'Network error, upload failed'));
+        };
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('segmentStyle', segmentStyle);
+        formData.append('contextPrompt', contextPrompt);
+        if (apiKey) formData.append('apiKey', apiKey);
+
+        xhr.send(formData);
+    });
+
     console.log('[Server] Task created:', taskId);
 
     // 2. Poll task status
