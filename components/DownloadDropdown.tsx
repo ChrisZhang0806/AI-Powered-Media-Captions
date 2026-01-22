@@ -13,6 +13,9 @@ interface DownloadDropdownProps {
     setDownloadDropdownFormat: (format: ExportFormat | null) => void;
     bilingualExportSeparate: boolean;
     uiLanguage: Language;
+    targetLang: string;
+    sourceLang: string;
+    isTranslating: boolean;
 }
 
 export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
@@ -23,10 +26,20 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
     setDownloadDropdownFormat,
     bilingualExportSeparate,
     uiLanguage,
+    targetLang,
+    sourceLang,
+    isTranslating,
 }) => {
     const t = getTranslation(uiLanguage);
     const handleDownload = (format: ExportFormat, mode: DownloadMode) => {
-        downloadCaptions(captions, format, videoName.split('.')[0] || 'subtitles', mode, bilingualExportSeparate);
+        downloadCaptions(
+            captions,
+            format,
+            videoName.split('.')[0] || 'subtitles',
+            mode,
+            bilingualExportSeparate,
+            { targetLang, sourceLang, uiLanguage }
+        );
         setDownloadDropdownFormat(null);
     };
 
@@ -60,10 +73,17 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
         <div className="flex items-center gap-2 shrink-0">
             <div className="relative">
                 <button
-                    disabled={captions.length === 0}
+                    disabled={captions.length === 0 || isTranslating}
                     onClick={() => {
                         if (captionMode === 'Original') {
-                            downloadCaptions(captions, 'SRT', videoName.split('.')[0] || 'subtitles', 'original');
+                            downloadCaptions(
+                                captions,
+                                'SRT',
+                                videoName.split('.')[0] || 'subtitles',
+                                'original',
+                                false,
+                                { targetLang, sourceLang, uiLanguage }
+                            );
                         } else {
                             setDownloadDropdownFormat(downloadDropdownFormat === 'SRT' ? null : 'SRT');
                         }
@@ -77,10 +97,17 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
 
             <div className="relative">
                 <button
-                    disabled={captions.length === 0}
+                    disabled={captions.length === 0 || isTranslating}
                     onClick={() => {
                         if (captionMode === 'Original') {
-                            downloadCaptions(captions, 'VTT', videoName.split('.')[0] || 'subtitles', 'original');
+                            downloadCaptions(
+                                captions,
+                                'VTT',
+                                videoName.split('.')[0] || 'subtitles',
+                                'original',
+                                false,
+                                { targetLang, sourceLang, uiLanguage }
+                            );
                         } else {
                             setDownloadDropdownFormat(downloadDropdownFormat === 'VTT' ? null : 'VTT');
                         }

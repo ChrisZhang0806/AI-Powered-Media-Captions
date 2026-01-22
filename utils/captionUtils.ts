@@ -1,4 +1,5 @@
 import { CaptionSegment, ExportFormat, DownloadMode } from "../types";
+import { Language } from "./i18n";
 
 const normalizeTimestamp = (time: string, format: ExportFormat): string => {
   const parts = time.split(/[,.]/);
@@ -33,7 +34,8 @@ export const downloadCaptions = (
   format: ExportFormat,
   filename: string,
   mode: DownloadMode = 'bilingual',
-  splitBilingual: boolean = false
+  splitBilingual: boolean = false,
+  metadata?: { targetLang?: string; sourceLang?: string; uiLanguage?: Language }
 ) => {
   console.log('[Download] 开始下载:', { format, filename, mode, captionsCount: captions.length });
 
@@ -49,7 +51,8 @@ export const downloadCaptions = (
 
     downloadSingleFile(originalCaptions, format, `${filename}_original`);
     setTimeout(() => {
-      downloadSingleFile(translatedCaptions, format, `${filename}_translated`);
+      const translatedFilename = metadata?.targetLang ? `${filename}_translated_${metadata.targetLang}` : `${filename}_translated`;
+      downloadSingleFile(translatedCaptions, format, translatedFilename);
     }, 500);
     return;
   }
@@ -61,7 +64,16 @@ export const downloadCaptions = (
     finalCaptions = captions.map(c => ({ ...c, text: c.text.split('\n')[1] || c.text }));
   }
 
-  downloadSingleFile(finalCaptions, format, filename);
+  let finalFilename = filename;
+  if (mode === 'translated') {
+    finalFilename = metadata?.targetLang ? `${filename}_translated_${metadata.targetLang}` : `${filename}_translated`;
+  } else if (mode === 'bilingual') {
+    finalFilename = (metadata?.sourceLang && metadata?.targetLang)
+      ? `${filename}_bilingual_${metadata.sourceLang}-${metadata.targetLang}`
+      : `${filename}_bilingual`;
+  }
+
+  downloadSingleFile(finalCaptions, format, finalFilename);
 };
 
 const downloadSingleFile = (captions: CaptionSegment[], format: ExportFormat, filename: string) => {

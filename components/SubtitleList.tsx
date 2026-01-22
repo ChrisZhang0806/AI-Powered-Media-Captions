@@ -159,6 +159,9 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                         setDownloadDropdownFormat={setDownloadDropdownFormat}
                         bilingualExportSeparate={bilingualExportSeparate}
                         uiLanguage={uiLanguage}
+                        targetLang={targetLang}
+                        sourceLang={sourceLang}
+                        isTranslating={isTranslating}
                     />
                 </div>
             </div>
