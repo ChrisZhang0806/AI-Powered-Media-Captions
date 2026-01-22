@@ -96,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                         {showApiKeyPanel && (
                             <>
                                 <div className="fixed inset-0 z-[60]" onClick={handleClosePanel} />
-                                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
+                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
                                     <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
                                         {t.configApiKey}
                                     </h4>
