@@ -1,7 +1,7 @@
 import { CaptionSegment, CaptionMode, ProgressInfo, SegmentStyle } from '../types';
 import { Language, getTranslation } from '../utils/i18n';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 
 interface TaskStatus {
     status: 'processing' | 'completed' | 'error';
