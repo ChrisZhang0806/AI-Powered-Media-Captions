@@ -34,7 +34,7 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
                     onClick={() => handleDownload(format, 'bilingual')}
                     className="w-full text-left px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                 >
-                    双语对照 {bilingualExportSeparate && '(分列)'}
+                    双语对照
                 </button>
                 <button
                     onClick={() => handleDownload(format, 'translated')}

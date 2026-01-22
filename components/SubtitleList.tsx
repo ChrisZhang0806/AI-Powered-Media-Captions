@@ -190,20 +190,6 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                 )}
             </div>
 
-            {/* Footer Options (Only for Bilingual) */}
-            {captions.length > 0 && captionMode === 'Bilingual' && (
-                <div className="px-4 py-2 border-t border-slate-100 bg-white flex items-center justify-end">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-400 uppercase">双语导出配置:</span>
-                        <button
-                            onClick={() => setBilingualExportSeparate(!bilingualExportSeparate)}
-                            className="text-[10px] text-slate-600 hover:text-primary-600 bg-slate-50 hover:bg-primary-50 px-2 py-1 rounded border border-slate-200 hover:border-primary-200 transition-all"
-                        >
-                            {bilingualExportSeparate ? '分离为两个文件' : '合并为一个文件'}
-                        </button>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
