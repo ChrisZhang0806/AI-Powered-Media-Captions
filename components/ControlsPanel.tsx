@@ -96,7 +96,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                         />
                     </div>
 
-                    <div className={`grid grid-cols-2 gap-3 transition-opacity duration-200 ${showTranslationSettings ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'}`}>
+                    <div className={`grid grid-cols-[120px_1fr] gap-3 transition-opacity duration-200 ${showTranslationSettings ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'}`}>
                         <div className="space-y-1">
                             <label className="text-[11px] text-slate-400 uppercase">{t.targetLang}</label>
                             <select
@@ -104,7 +104,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                                 onChange={(e) => setTargetLang(e.target.value)}
                                 className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 py-1.5 bg-slate-50"
                             >
-                                {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                                {LANGUAGES.map(l => (
+                                    <option key={l} value={l}>
+                                        {t['lang' + l as keyof typeof t] || l}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div className="space-y-1">

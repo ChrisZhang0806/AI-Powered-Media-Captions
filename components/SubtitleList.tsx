@@ -106,7 +106,11 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                             onChange={(e) => setSourceLang(e.target.value)}
                             className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                         >
-                            {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                            {LANGUAGES.map(l => (
+                                <option key={l} value={l}>
+                                    {t['lang' + l as keyof typeof t] || l}
+                                </option>
+                            ))}
                         </select>
                         <ChevronRight className="w-3 h-3 text-slate-300" />
                         <select
@@ -115,7 +119,11 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                             onChange={(e) => setTargetLang(e.target.value)}
                             className="bg-transparent border-none p-0 text-[11px] text-slate-600 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                         >
-                            {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                            {LANGUAGES.map(l => (
+                                <option key={l} value={l}>
+                                    {t['lang' + l as keyof typeof t] || l}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
@@ -159,8 +167,8 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                 <div className="w-32 flex-shrink-0">{t.playPosition}</div>
                 {isSubtitleOnly ? (
                     <>
-                        <div className="flex-1 px-4 border-r border-slate-200">{t.original} ({sourceLang})</div>
-                        <div className="flex-1 px-4">{t.translation} ({targetLang})</div>
+                        <div className="flex-1 px-4 border-r border-slate-200">{t.original} ({t['lang' + sourceLang as keyof typeof t] || sourceLang})</div>
+                        <div className="flex-1 px-4">{t.translation} ({t['lang' + targetLang as keyof typeof t] || targetLang})</div>
                     </>
                 ) : (
                     <div className="flex-1 px-4">{t.originalContent}</div>

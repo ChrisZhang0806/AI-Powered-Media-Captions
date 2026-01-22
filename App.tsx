@@ -18,7 +18,7 @@ import { ControlsPanel } from './components/ControlsPanel';
 import { SubtitleList } from './components/SubtitleList';
 
 const App: React.FC = () => {
-    // 状态管理
+    // State Management
     const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoMeta, setVideoMeta] = useState<VideoMetadata | null>(null);
@@ -29,20 +29,20 @@ const App: React.FC = () => {
     });
     const t = getTranslation(uiLanguage);
 
-    const [sourceLang, setSourceLang] = useState('英文');
-    const [targetLang, setTargetLang] = useState('中文');
+    const [sourceLang, setSourceLang] = useState('English');
+    const [targetLang, setTargetLang] = useState('Chinese');
     const [captionMode, setCaptionMode] = useState<CaptionMode>('Original');
     const [segmentStyle, setSegmentStyle] = useState<SegmentStyle>('natural');
     const [styleTemp, setStyleTemp] = useState(0.5);
     const [contextPrompt, setContextPrompt] = useState('');
 
-    // 下载下拉菜单状态
+    // Download Dropdown State
     const [downloadDropdownFormat, setDownloadDropdownFormat] = useState<ExportFormat | null>(null);
     const [bilingualExportSeparate, setBilingualExportSeparate] = useState(false);
 
     const [isTranslating, setIsTranslating] = useState(false);
 
-    // 编辑相关
+    // Editing State
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText, setEditText] = useState('');
 
@@ -59,11 +59,11 @@ const App: React.FC = () => {
     useAudioAnalyser({ mediaRef, canvasRef, isAudio });
     const { activeCaption, jumpToTime } = useMediaSync({ mediaRef, captions });
 
-    // 文件处理逻辑
+    // File Processing Logic
     const processFile = async (file: File) => {
         const fileName = file.name.toLowerCase();
 
-        // 判断是否为字幕文件
+        // Check if it's a subtitle file
         if (fileName.endsWith('.srt') || fileName.endsWith('.vtt')) {
             const text = await file.text();
             const parsedCaptions = parseCaptions(text);
@@ -73,7 +73,7 @@ const App: React.FC = () => {
                 const detectedLang = detectLanguage(parsedCaptions.map(c => c.text));
                 setSourceLang(detectedLang);
                 if (detectedLang === targetLang) {
-                    setTargetLang(detectedLang === '中文' ? '英文' : '中文');
+                    setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
                 }
                 setVideoFile(null);
                 setVideoMeta({
@@ -99,7 +99,7 @@ const App: React.FC = () => {
         setCaptions([]);
     };
 
-    // 自动滚动到字幕列表底部
+    // Auto-scroll to bottom of subtitle list
     const scrollToBottom = () => {
         const listContainer = document.getElementById('subtitle-list-container');
         if (listContainer) {
@@ -110,11 +110,11 @@ const App: React.FC = () => {
         }
     };
 
-    // AI 处理逻辑
+    // AI Processing Logic
     const handleProcess = async () => {
         if (!videoFile) return;
 
-        // 检查是否有 API Key
+        // Check if API Key exists
         if (!apiKeyData.userApiKey) {
             setErrorMsg(t.errorNoApiKey);
             apiKeyData.openPanel();
@@ -130,11 +130,11 @@ const App: React.FC = () => {
             let lastSegments: CaptionSegment[] = [];
             const userApiKey = apiKeyData.userApiKey;
 
-            console.log('[App] 正在检查后端服务器...');
+            console.log('[App] Checking backend server...');
             const isServerAvailable = await checkServerHealth();
 
             if (isServerAvailable) {
-                console.log('[App] 使用远程服务器进行高性能处理');
+                console.log('[App] Using remote server for high-performance processing');
                 await transcribeWithServer(
                     videoFile,
                     targetLang,
@@ -147,7 +147,8 @@ const App: React.FC = () => {
                         scrollToBottom();
                     },
                     (info) => setProgressInfo(info),
-                    userApiKey
+                    userApiKey,
+                    uiLanguage
                 );
 
                 if (captionMode !== 'Original' && lastSegments.length > 0) {
@@ -156,10 +157,10 @@ const App: React.FC = () => {
                         stage: 'translating',
                         stageLabel: t.translating,
                         progress: 95,
-                        detail: `${t.translating} ${targetLang}`
+                        detail: `${t.translating} ${t['lang' + targetLang as keyof typeof t] || targetLang}`
                     });
 
-                    const translated = await translateSegments(lastSegments, targetLang, styleTemp, undefined, userApiKey);
+                    const translated = await translateSegments(lastSegments, targetLang, styleTemp, undefined, userApiKey, uiLanguage);
                     if (captionMode === 'Translation') {
                         setCaptions(translated);
                         lastSegments = translated;
@@ -173,7 +174,7 @@ const App: React.FC = () => {
                     }
                 }
             } else {
-                console.log('[App] 后端未启动，使用本地浏览器模式');
+                console.log('[App] Backend not started, using browser-only mode');
                 await generateCaptionsStream(
                     videoFile,
                     targetLang,
@@ -187,7 +188,8 @@ const App: React.FC = () => {
                     (info) => {
                         setProgressInfo(info);
                     },
-                    userApiKey
+                    userApiKey,
+                    uiLanguage
                 );
             }
 
@@ -210,7 +212,7 @@ const App: React.FC = () => {
     const handleTranslateExisting = async () => {
         if (captions.length === 0 || isTranslating || sourceLang === targetLang) return;
 
-        // 检查是否有 API Key
+        // Check if API Key exists
         if (!apiKeyData.userApiKey) {
             setErrorMsg(t.errorNoApiKey);
             apiKeyData.openPanel();
@@ -219,17 +221,17 @@ const App: React.FC = () => {
 
         setIsTranslating(true);
         setErrorMsg('');
-        const originalCaptions = [...captions]; // 保存原文备份
+        const originalCaptions = [...captions]; // Backup original captions
 
         try {
             await translateSegments(originalCaptions, targetLang, styleTemp, (translatedChunks) => {
-                // 实时流式合并：原文 + 译文
+                // Real-time stream merge: Original + Translation
                 const merged = originalCaptions.map((orig, i) => ({
                     ...orig,
                     text: `${orig.text}\n${translatedChunks[i]?.text || ''}`
                 }));
                 setCaptions(merged);
-            }, apiKeyData.userApiKey);
+            }, apiKeyData.userApiKey, uiLanguage);
             setCaptionMode('Bilingual');
         } catch (err: any) {
             setErrorMsg(err.message || t.errorTranslateFailed);

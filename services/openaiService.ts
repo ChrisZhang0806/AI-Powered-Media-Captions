@@ -1,10 +1,11 @@
 import OpenAI from 'openai';
 import { CaptionSegment, CaptionMode, SegmentStyle, ProgressInfo } from '../types';
 import { extractAudio, segmentAudioStream, isVideoFile } from '../utils/audioUtils';
+import { Language, getTranslation } from '../utils/i18n';
 
 const openai = new OpenAI({
     apiKey: import.meta.env.VITE_OPENAI_API_KEY || 'dummy_key_for_init',
-    dangerouslyAllowBrowser: true // 允许在浏览器中使用（仅用于演示）
+    dangerouslyAllowBrowser: true // Allowed for browser usage (demo only)
 });
 
 const SEGMENT_STYLE_PROMPTS: Record<SegmentStyle, string> = {
@@ -14,7 +15,7 @@ const SEGMENT_STYLE_PROMPTS: Record<SegmentStyle, string> = {
 };
 
 /**
- * 将 Whisper 返回的时间戳格式转换为 SRT 格式
+ * Format Whisper timestamps (seconds) to SRT format (HH:MM:SS,mmm)
  */
 const formatTimestamp = (seconds: number): string => {
     const h = Math.floor(seconds / 3600);
@@ -25,7 +26,7 @@ const formatTimestamp = (seconds: number): string => {
 };
 
 /**
- * 验证 API Key 是否有效
+ * Validate if the API Key is valid
  */
 export const validateApiKey = async (apiKey: string): Promise<boolean> => {
     try {
@@ -38,7 +39,7 @@ export const validateApiKey = async (apiKey: string): Promise<boolean> => {
 };
 
 /**
- * 获取 OpenAI 客户端实例
+ * Get OpenAI client instance
  */
 const getClient = (userApiKey?: string) => {
     if (userApiKey) {
@@ -51,7 +52,7 @@ const getClient = (userApiKey?: string) => {
 };
 
 /**
- * 转录单个音频片段
+ * Transcribe a single audio segment
  */
 const transcribeSegment = async (
     audioBlob: Blob,
@@ -71,12 +72,12 @@ const transcribeSegment = async (
         prompt: SEGMENT_STYLE_PROMPTS[segmentStyle],
     });
 
-    // Whisper 返回的 segments 包含 start, end, text
+    // Whisper returns segments containing start, end, text
     return (response as any).segments || [];
 };
 
 /**
- * 流式处理并转录音频
+ * Process and transcribe audio in a streaming fashion
  */
 export const generateCaptionsStream = async (
     file: File,
@@ -85,27 +86,29 @@ export const generateCaptionsStream = async (
     segmentStyle: SegmentStyle = 'natural',
     onChunk: (segments: CaptionSegment[]) => void,
     onProgress?: (info: ProgressInfo) => void,
-    userApiKey?: string
+    userApiKey?: string,
+    uiLanguage: Language = 'en'
 ): Promise<void> => {
-    const MAX_DIRECT_SIZE = 24 * 1024 * 1024; // 24MB (预留1MB缓冲)
+    const t = getTranslation(uiLanguage);
+    const MAX_DIRECT_SIZE = 24 * 1024 * 1024; // 24MB (1MB buffer reserved)
     const isSmallAudioFile = file.type.startsWith('audio/') && file.size <= MAX_DIRECT_SIZE;
 
-    // 小文件快速通道：直接转录，跳过 FFmpeg
+    // Fast track for small files: direct transcription, skip FFmpeg
     if (isSmallAudioFile) {
         onProgress?.({
             stage: 'transcribing',
-            stageLabel: '准备上传到 AI...',
+            stageLabel: t.prepUpload,
             progress: 20,
-            detail: '小文件无需分割，直接处理'
+            detail: uiLanguage === 'zh' ? '小文件无需分割，直接处理' : 'Small file, direct process'
         });
 
-        // 模拟进度更新（因为 Whisper API 不提供实时进度）
+        // Simulate progress updates (Whisper API doesn't provide real-time stream)
         const progressInterval = setInterval(() => {
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: 'AI 正在识别语音...',
+                stageLabel: t.aiRecognizing,
                 progress: Math.min(80, 30 + Math.random() * 40),
-                detail: 'AI 正在分析音频内容'
+                detail: t.analyzing
             });
         }, 1500);
 
@@ -115,9 +118,9 @@ export const generateCaptionsStream = async (
 
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: '转录完成，整理结果...',
+                stageLabel: t.organizing,
                 progress: 90,
-                detail: `识别到 ${whisperSegments.length} 个片段`
+                detail: t.capturedInfo.replace('{count}', whisperSegments.length.toString())
             });
 
             const captions: CaptionSegment[] = whisperSegments.map((seg, i) => ({
@@ -129,16 +132,16 @@ export const generateCaptionsStream = async (
 
             onChunk(captions);
 
-            // 翻译处理
+            // Translation processing
             if (mode !== 'Original' && captions.length > 0) {
                 onProgress?.({
                     stage: 'translating',
-                    stageLabel: '翻译中...',
+                    stageLabel: t.translating,
                     progress: 70,
-                    detail: `翻译为 ${targetLanguage}`
+                    detail: `${t.translating} ${targetLanguage}`
                 });
 
-                const translated = await translateSegments(captions, targetLanguage, 0.5, undefined, userApiKey);
+                const translated = await translateSegments(captions, targetLanguage, 0.5, undefined, userApiKey, uiLanguage);
                 if (mode === 'Translation') {
                     onChunk(translated);
                 } else {
@@ -152,9 +155,9 @@ export const generateCaptionsStream = async (
 
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: '处理完成',
+                stageLabel: t.done,
                 progress: 100,
-                detail: `共 ${captions.length} 条字幕`
+                detail: t.capturedInfo.replace('{count}', captions.length.toString())
             });
             return;
         } catch (error) {
@@ -163,28 +166,28 @@ export const generateCaptionsStream = async (
         }
     }
 
-    // 大文件走原有流程
+    // Process for large files
     onProgress?.({
         stage: 'segmenting',
-        stageLabel: '启动处理引擎...',
+        stageLabel: t.preparingEngine,
         progress: 0,
-        detail: '准备音频分割'
+        detail: t.readyForSegment
     });
 
     const allCaptions: CaptionSegment[] = [];
     const activeTasks: Promise<void>[] = [];
-    const MAX_CONCURRENT_TRANSCRIPTIONS = 3; // 允许 3 个并发 OpenAI 请求
+    const MAX_CONCURRENT_TRANSCRIPTIONS = 3; // Allow 3 concurrent OpenAI requests
     let segmentCount = 0;
     let completedCount = 0;
 
 
-    // 辅助函数：更新并回调字幕
+    // Helper: update and callback captions
     const addAndSortCaptions = (newSegments: CaptionSegment[]) => {
         allCaptions.push(...newSegments);
-        // 按起始时间排序
+        // Sort by start time
         allCaptions.sort((a, b) => parseTimestamp(a.startTime) - parseTimestamp(b.startTime));
 
-        // 去重处理（特别是重叠部分）
+        // Deduplication (especially for overlaps)
         const uniqueCaptions: CaptionSegment[] = [];
         for (const cap of allCaptions) {
             const last = uniqueCaptions[uniqueCaptions.length - 1];
@@ -193,20 +196,20 @@ export const generateCaptionsStream = async (
             }
         }
 
-        // 重新分配 ID 并回调
+        // Reassign IDs and callback
         const result = uniqueCaptions.map((c, i) => ({ ...c, id: i }));
         onChunk(result);
         return result;
     };
 
-    // 2. 如果是视频文件，先提取音频
+    // 2. Extract audio if it's a video file
     let audioSource: Blob = file;
     if (isVideoFile(file)) {
         onProgress?.({
             stage: 'extracting_audio',
-            stageLabel: '正在从视频中提取音频...',
+            stageLabel: t.extractingAudio,
             progress: 5,
-            detail: '这可能需要一些时间'
+            detail: t.timeWait
         });
 
         try {
@@ -214,25 +217,25 @@ export const generateCaptionsStream = async (
                 const overallProgress = 5 + Math.round(p * 0.3);
                 onProgress?.({
                     stage: 'extracting_audio',
-                    stageLabel: '提取音频中...',
+                    stageLabel: t.extractingAudio,
                     progress: overallProgress,
-                    detail: '正在处理视频文件'
+                    detail: t.extractingDetails
                 });
             });
-            console.log('[Captions] 音频提取完成，大小:', (audioSource.size / 1024 / 1024).toFixed(2), 'MB');
+            console.log('[Captions] Audio extraction complete, size:', (audioSource.size / 1024 / 1024).toFixed(2), 'MB');
         } catch (error) {
-            console.error('[Captions] 音频提取失败:', error);
-            throw new Error('视频音频提取失败，请检查视频文件格式');
+            console.error('[Captions] Audio extraction failed:', error);
+            throw new Error(uiLanguage === 'zh' ? '视频音频提取失败，请检查视频文件格式' : 'Video audio extraction failed, please check file format');
         }
     }
 
-    // 3. 流式分割音频（一边切分一边转录）
+    // 3. Stream-split audio (transcribe while splitting)
     await segmentAudioStream(
         audioSource,
         async ({ blob, startTime }) => {
             const currentSegmentIndex = segmentCount++;
 
-            // 如果当前活跃任务过多，等待其中一个完成（简单的并发控制）
+            // Simple concurrency control: wait if tasks exceed limit
             if (activeTasks.length >= MAX_CONCURRENT_TRANSCRIPTIONS) {
                 await Promise.race(activeTasks);
             }
@@ -241,15 +244,15 @@ export const generateCaptionsStream = async (
                 try {
                     onProgress?.({
                         stage: 'transcribing',
-                        stageLabel: '转录中...',
+                        stageLabel: t.transcribing,
                         progress: Math.min(99, Math.round((completedCount / (segmentCount || 1)) * 100)),
-                        detail: `正在处理第 ${currentSegmentIndex + 1} 个片段`
+                        detail: t.segmentInfo.replace('{index}', (currentSegmentIndex + 1).toString())
                     });
 
                     const whisperSegments = await transcribeSegment(blob, undefined, segmentStyle, userApiKey);
 
                     const newCaptions: CaptionSegment[] = whisperSegments.map(seg => ({
-                        id: 0, // 临时，后续会重新分配
+                        id: 0, // Temp ID, will be reassigned
                         startTime: formatTimestamp(seg.start + startTime),
                         endTime: formatTimestamp(seg.end + startTime),
                         text: seg.text.trim()
@@ -257,11 +260,11 @@ export const generateCaptionsStream = async (
 
                     const currentFullList = addAndSortCaptions(newCaptions);
 
-                    // 3. 实时翻译（如果是单语翻译模式或双语模式）
+                    // 3. Real-time translation (if requested)
                     if (mode !== 'Original' && newCaptions.length > 0) {
-                        const translated = await translateSegments(newCaptions, targetLanguage, 0.5, undefined, userApiKey);
+                        const translated = await translateSegments(newCaptions, targetLanguage, 0.5, undefined, userApiKey, uiLanguage);
 
-                        // 更新总列表中的对应项
+                        // Update items in the full list
                         const finalBilingual = currentFullList.map(cap => {
                             const t = translated.find(tr => tr.startTime === cap.startTime);
                             if (!t) return cap;
@@ -269,7 +272,7 @@ export const generateCaptionsStream = async (
                             if (mode === 'Translation') {
                                 return { ...cap, text: t.text };
                             } else {
-                                // 确保不重复添加原句（如果 t.text 已经包含了原句）
+                                // Prevent duplicate appendage
                                 return { ...cap, text: `${cap.text}\n${t.text}` };
                             }
                         });
@@ -283,45 +286,43 @@ export const generateCaptionsStream = async (
             })();
 
             activeTasks.push(task);
-            // 任务完成后从活跃列表中移除
+            // Remove from active tasks after completion
             task.finally(() => {
                 const index = activeTasks.indexOf(task);
                 if (index > -1) activeTasks.splice(index, 1);
             });
         },
         (info) => {
-            // 将底层的细分进度反馈给 UI
+            // Feedback low-level segmentation progress to UI
             onProgress?.({
                 stage: 'segmenting',
                 stageLabel: info.stageLabel,
                 progress: info.progress,
-                detail: '正在准备音轨...'
+                detail: uiLanguage === 'zh' ? '正在准备音轨...' : 'Preparing audio tracks...'
             });
         }
     );
 
-    // 等待所有剩余任务完成
+    // Wait for all remaining tasks
     await Promise.all(activeTasks);
 
     onProgress?.({
         stage: 'transcribing',
-        stageLabel: '处理完成',
+        stageLabel: t.done,
         progress: 100,
-        detail: `共处理完成 ${allCaptions.length} 条字幕`
+        detail: t.capturedInfo.replace('{count}', allCaptions.length.toString())
     });
 };
 
 /**
- * 检测字幕的源语言
+ * Detect source language of the captions
  */
 const detectSourceLanguage = (segments: CaptionSegment[]): string => {
     const text = segments.map(s => s.text).join(' ');
 
-    // 检测中文字符
+    // Detect character types
     const chineseChars = text.match(/[\u4e00-\u9fff]/g) || [];
-    // 检测日文字符（平假名和片假名）
     const japaneseChars = text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || [];
-    // 检测韩文字符
     const koreanChars = text.match(/[\uac00-\ud7af]/g) || [];
 
     const totalChars = text.length;
@@ -334,7 +335,7 @@ const detectSourceLanguage = (segments: CaptionSegment[]): string => {
 };
 
 /**
- * 解析时间戳字符串为秒数
+ * Parse timestamp string to seconds
  */
 const parseTimestamp = (timestamp: string): number => {
     const [time, ms] = timestamp.split(',');
@@ -343,33 +344,34 @@ const parseTimestamp = (timestamp: string): number => {
 };
 
 /**
- * 翻译字幕片段（支持批处理与 1:1 精准对齐）
+ * Translate subtitle segments (supporting batching and 1:1 alignment)
  */
 export const translateSegments = async (
     segments: CaptionSegment[],
     targetLanguage: string,
     styleValue: number = 0.5,
     onChunk?: (translatedSegments: CaptionSegment[]) => void,
-    userApiKey?: string
+    userApiKey?: string,
+    uiLanguage: Language = 'en'
 ): Promise<CaptionSegment[]> => {
     if (segments.length === 0) return [];
 
-    // 基于 styleValue (0-1) 映射到 0-100 的 styleStrength
+    // Map styleValue (0-1) to 0-100 strength
     const styleStrength = Math.round(styleValue * 100);
 
     let styleDesc = "";
     if (styleStrength <= 33) {
-        // 强化直译 (模拟低温)
+        // ENHANCED LITERAL
         styleDesc = "LITERAL. Translate with technical precision. DO NOT use creative synonyms. Keep the sentence structure identical to the source. If the source is a fragment, keep it as a fragment. Strictly avoid adding any personal interpretations.";
     } else if (styleStrength <= 66) {
-        // 强化平衡
+        // BALANCED
         styleDesc = "BALANCED. Focus on clarity and readability. Use standard, clear language that would be appropriate for a general audience. Ensure the tone is natural while remaining faithful to the core meaning.";
     } else {
-        // 强化创意 (模拟高温)
+        // CREATIVE LOCALIZATION
         styleDesc = "CREATIVE. Act as a professional localizer. Rewrite metaphors into culturally equivalent ones. Use informal, catchy, or dramatic language suitable for social media or entertainment. Prioritize 'vibe', emotional impact, and natural flow over word-for-word accuracy.";
     }
 
-    // 检测源语言（简单推断）
+    // Detect source language
     const sourceLang = detectSourceLanguage(segments);
 
     const translatedSegments = [...segments];
@@ -381,7 +383,7 @@ export const translateSegments = async (
         const end = Math.min(start + BATCH_SIZE, segments.length);
         const batch = segments.slice(start, end);
 
-        // 使用 JSON 结构包装输入，彻底消除歧义
+        // Use JSON structure for clarity
         const inputData = batch.map((s, idx) => ({ id: idx, text: s.text }));
         const client = getClient(userApiKey);
 
@@ -404,7 +406,6 @@ Your goal is to translate the provided subtitle blocks according to this style g
                         content: `Translate these subtitles:\n${JSON.stringify(inputData)}`
                     }
                 ],
-                // temperature: styleStrength <= 33 ? 0.1 : styleStrength <= 66 ? 0.3 : 0.6, // gpt-5-nano only supports default (1)
                 response_format: { type: "json_object" }
             });
 
@@ -426,7 +427,7 @@ Your goal is to translate the provided subtitle blocks according to this style g
             onChunk?.([...translatedSegments]);
         } catch (err) {
             console.error('Batch translation error:', err);
-            throw err; // 向上抛出错误，让 UI 能捕捉到
+            throw err; // Re-throw to be caught by UI
         }
     };
 
@@ -441,7 +442,7 @@ Your goal is to translate the provided subtitle blocks according to this style g
 };
 
 /**
- * 语义优化字幕断句（使用 GPT）
+ * Semantic subtitle refinement (using GPT)
  */
 export const refineSegments = async (
     segments: CaptionSegment[],
@@ -471,7 +472,6 @@ RULES:
                     content: JSON.stringify(segments)
                 }
             ],
-            // temperature: 0.1, // gpt-5-nano only supports default (1)
             response_format: { type: 'json_object' }
         });
 

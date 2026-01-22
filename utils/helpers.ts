@@ -78,4 +78,5 @@ export const detectLanguage = (texts: string[]): string => {
     return 'English';
 };
 
-export const LANGUAGES = ["中文", "英文", "日文", "韩文", "法文", "德文", "西班牙文"];
+// 语言核心定义（作为 i18n key 和逻辑判断标识）
+export const LANGUAGES = ["Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish"];

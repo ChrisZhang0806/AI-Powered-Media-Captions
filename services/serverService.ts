@@ -1,4 +1,5 @@
 import { CaptionSegment, CaptionMode, ProgressInfo, SegmentStyle } from '../types';
+import { Language, getTranslation } from '../utils/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -11,8 +12,8 @@ interface TaskStatus {
 }
 
 /**
- * 使用后端服务处理视频/音频文件
- * 比浏览器端 FFmpeg WASM 快 10-50 倍
+ * Use backend service to process video/audio files
+ * 10-50x faster than browser-side FFmpeg WASM
  */
 export const transcribeWithServer = async (
     file: File,
@@ -22,14 +23,19 @@ export const transcribeWithServer = async (
     contextPrompt: string = '',
     onChunk: (segments: CaptionSegment[]) => void,
     onProgress?: (info: ProgressInfo) => void,
-    apiKey?: string
+    apiKey?: string,
+    uiLanguage: Language = 'en'
 ): Promise<void> => {
-    // 1. 上传文件
+    const t = getTranslation(uiLanguage);
+
+    // 1. Upload file
     onProgress?.({
         stage: 'extracting_audio',
-        stageLabel: '上传文件到服务器...',
+        stageLabel: t.uploading,
         progress: 5,
-        detail: `文件大小: ${(file.size / 1024 / 1024).toFixed(1)} MB`
+        detail: uiLanguage === 'zh'
+            ? `文件大小: ${(file.size / 1024 / 1024).toFixed(1)} MB`
+            : `File size: ${(file.size / 1024 / 1024).toFixed(1)} MB`
     });
 
     const formData = new FormData();
@@ -46,35 +52,38 @@ export const transcribeWithServer = async (
     if (!uploadResponse.ok) {
         try {
             const errorData = await uploadResponse.json();
-            throw new Error(errorData.error || '上传失败');
+            throw new Error(errorData.error || (uiLanguage === 'zh' ? '上传失败' : 'Upload failed'));
         } catch (e: any) {
-            throw new Error(e.message || '上传失败，请检查网络或文件大小');
+            throw new Error(e.message || (uiLanguage === 'zh' ? '上传失败，请检查网络或文件大小' : 'Upload failed, check network or file size'));
         }
     }
 
     const { taskId } = await uploadResponse.json();
-    console.log('[Server] 任务已创建:', taskId);
+    console.log('[Server] Task created:', taskId);
 
-    // 2. 轮询任务状态
-    await pollTaskStatus(taskId, onChunk, onProgress, mode, targetLanguage);
+    // 2. Poll task status
+    await pollTaskStatus(taskId, onChunk, onProgress, mode, targetLanguage, uiLanguage);
 };
 
 /**
- * 轮询任务状态
+ * Poll task status until completion or error
  */
 async function pollTaskStatus(
     taskId: string,
     onChunk: (segments: CaptionSegment[]) => void,
     onProgress?: (info: ProgressInfo) => void,
     mode?: CaptionMode,
-    targetLanguage?: string
+    targetLanguage?: string,
+    uiLanguage: Language = 'en'
 ): Promise<void> {
+    const t = getTranslation(uiLanguage);
+
     const stageLabels: Record<string, string> = {
-        'uploading': '上传中...',
-        'extracting': '提取音频中...',
-        'splitting': '分割音频中...',
-        'transcribing': '转录中...',
-        'done': '处理完成'
+        'uploading': t.uploading,
+        'extracting': t.extractingAudio,
+        'splitting': t.segmenting,
+        'transcribing': t.transcribing,
+        'done': t.done
     };
 
     return new Promise((resolve, reject) => {
@@ -88,11 +97,11 @@ async function pollTaskStatus(
                     stageLabel: stageLabels[task.stage] || task.stage,
                     progress: task.progress,
                     detail: task.captions.length > 0
-                        ? `已识别 ${task.captions.length} 条字幕`
-                        : 'AI 正在分析音频内容'
+                        ? t.capturedInfo.replace('{count}', task.captions.length.toString())
+                        : t.analyzing
                 });
 
-                // 实时更新字幕
+                // Real-time caption updates
                 if (task.captions.length > 0) {
                     onChunk(task.captions);
                 }
@@ -100,23 +109,19 @@ async function pollTaskStatus(
                 if (task.status === 'completed') {
                     onChunk(task.captions);
 
-                    // TODO: 如果需要翻译，在这里调用翻译 API
-                    // if (mode !== 'Original' && task.captions.length > 0) {
-                    //     const translated = await translateSegments(task.captions, targetLanguage);
-                    //     ...
-                    // }
-
                     onProgress?.({
                         stage: 'transcribing',
-                        stageLabel: '处理完成',
+                        stageLabel: t.done,
                         progress: 100,
-                        detail: `共 ${task.captions.length} 条字幕`
+                        detail: uiLanguage === 'zh'
+                            ? `共 ${task.captions.length} 条字幕`
+                            : `Total ${task.captions.length} captions`
                     });
                     resolve();
                 } else if (task.status === 'error') {
-                    reject(new Error(task.error || '处理失败'));
+                    reject(new Error(task.error || (uiLanguage === 'zh' ? '处理失败' : 'Processing failed')));
                 } else {
-                    // 继续轮询
+                    // Continue polling
                     setTimeout(poll, 1000);
                 }
             } catch (error) {
@@ -129,7 +134,7 @@ async function pollTaskStatus(
 }
 
 /**
- * 检查后端服务是否可用
+ * Check if the backend server is available
  */
 export const checkServerHealth = async (): Promise<boolean> => {
     try {

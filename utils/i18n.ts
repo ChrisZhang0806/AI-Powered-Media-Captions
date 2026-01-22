@@ -13,7 +13,7 @@ export const translations = {
         cancel: '取消',
         verifyAndConfirm: '验证并确认',
 
-        mainTitle: 'AI 智能音视频转录与翻译',
+        mainTitle: 'AI 智能音视频转录 with FFmpeg',
         mainSubtitle: '支持极速转写、语义断句、双语翻译及 SRT/VTT 字幕加工。',
         uploadTip: '点击或拖拽上传媒体或字幕文件',
         supportFormat: '支持 MP4, MP3, WAV 及 SRT, VTT 格式',
@@ -39,14 +39,14 @@ export const translations = {
         showAfterFinish: '完成后显示字幕',
 
         subtitlePreview: '字幕预览',
-        downloadSrt: '下载 SRT',
-        downloadVtt: '下载 VTT',
+        downloadSrt: 'SRT',
+        downloadVtt: 'VTT',
         noSubtitles: '暂无字幕内容',
         playPosition: '播放位置',
         originalContent: '原文内容',
         manage: '管理',
 
-        bilingual对照: '双语对照',
+        bilingualMode: '双语对照',
         onlyTranslation: '仅译文',
         onlyOriginal: '仅原文',
         noTranslationNeeded: '无需翻译',
@@ -59,6 +59,32 @@ export const translations = {
         errorInvalidSub: '无效的字幕文件，请检查格式是否正确',
         errorProcessFailed: '生成失败',
         errorTranslateFailed: '翻译失败',
+
+        // Progress Details
+        uploading: '上传文件到服务器...',
+        extractingAudio: '提取音频中...',
+        segmenting: '分割音频中...',
+        transcribing: '转录中...',
+        done: '处理完成',
+        analyzing: 'AI 正在分析音频内容',
+        prepUpload: '准备上传到 AI...',
+        aiRecognizing: 'AI 正在识别语音...',
+        organizing: '转录完成，整理结果...',
+        preparingEngine: '启动处理引擎...',
+        readyForSegment: '准备音频分割',
+        extractingDetails: '正在处理视频文件',
+        timeWait: '这可能需要一些时间',
+        capturedInfo: '已识别 {count} 条字幕',
+        segmentInfo: '正在处理第 {index} 个片段',
+
+        // Languages
+        langChinese: '中文',
+        langEnglish: '英文',
+        langJapanese: '日文',
+        langKorean: '韩文',
+        langFrench: '法文',
+        langGerman: '德文',
+        langSpanish: '西班牙文'
     },
     en: {
         brand: 'AI Media Captions',
@@ -73,9 +99,9 @@ export const translations = {
         verifyAndConfirm: 'Verify & Confirm',
 
         mainTitle: 'AI Audio/Video Transcription & Translation',
-        mainSubtitle: 'Support fast transcription, semantic segmentation, bilingual translation, and SRT/VTT processing.',
+        mainSubtitle: 'Fast AI-powered transcription, semantic segmentation, and professional translation.',
         uploadTip: 'Click or drag to upload media or subtitle files',
-        supportFormat: 'Supports MP4, MP3, WAV and SRT, VTT formats',
+        supportFormat: 'Supports MP4, MP3, WAV and SRT, VTT',
 
         processMode: 'Process Mode',
         originalOnly: 'Original Only',
@@ -98,14 +124,14 @@ export const translations = {
         showAfterFinish: 'Subtitles will show here',
 
         subtitlePreview: 'Subtitle Preview',
-        downloadSrt: 'Download SRT',
-        downloadVtt: 'Download VTT',
+        downloadSrt: 'SRT',
+        downloadVtt: 'VTT',
         noSubtitles: 'No Subtitles Found',
         playPosition: 'Play Position',
         originalContent: 'Original Content',
         manage: 'Manage',
 
-        bilingual对照: 'Bilingual',
+        bilingualMode: 'Bilingual',
         onlyTranslation: 'Translation Only',
         onlyOriginal: 'Original Only',
         noTranslationNeeded: 'No Translation Needed',
@@ -118,7 +144,34 @@ export const translations = {
         errorInvalidSub: 'Invalid subtitle file format',
         errorProcessFailed: 'Processing failed',
         errorTranslateFailed: 'Translation failed',
+
+        // Progress Details
+        uploading: 'Uploading to server...',
+        extractingAudio: 'Extracting audio...',
+        segmenting: 'Segmenting audio...',
+        transcribing: 'Transcribing...',
+        done: 'Processing finished',
+        analyzing: 'AI is analyzing audio content',
+        prepUpload: 'Preparing for AI upload...',
+        aiRecognizing: 'AI is recognizing speech...',
+        organizing: 'Transcription done, organizing result...',
+        preparingEngine: 'Starting processing engine...',
+        readyForSegment: 'Ready for audio segmenting',
+        extractingDetails: 'Processing video file',
+        timeWait: 'This may take some time',
+        capturedInfo: 'Recognized {count} segments',
+        segmentInfo: 'Processing segment #{index}',
+
+        // Languages
+        langChinese: 'Chinese',
+        langEnglish: 'English',
+        langJapanese: 'Japanese',
+        langKorean: 'Korean',
+        langFrench: 'French',
+        langGerman: 'German',
+        langSpanish: 'Spanish'
     }
 };
 
 export const getTranslation = (lang: Language) => translations[lang];
+
