@@ -36,9 +36,6 @@ const App: React.FC = () => {
     const [styleTemp, setStyleTemp] = useState(0.5);
     const [contextPrompt, setContextPrompt] = useState('');
 
-    // Download Dropdown State
-    const [downloadDropdownFormat, setDownloadDropdownFormat] = useState<ExportFormat | null>(null);
-    const [bilingualExportSeparate, setBilingualExportSeparate] = useState(false);
 
     // Language Auto-switching logic
     const prevSource = useRef(sourceLang);
@@ -340,8 +337,6 @@ const App: React.FC = () => {
                                 sourceLang={sourceLang}
                                 targetLang={targetLang}
                                 captionMode={captionMode}
-                                bilingualExportSeparate={bilingualExportSeparate}
-                                downloadDropdownFormat={downloadDropdownFormat}
                                 styleTemp={styleTemp}
                                 uiLanguage={uiLanguage}
 
@@ -355,8 +350,6 @@ const App: React.FC = () => {
                                 setTargetLang={setTargetLang}
                                 setStyleTemp={setStyleTemp}
                                 onTranslate={handleTranslateExisting}
-                                setDownloadDropdownFormat={setDownloadDropdownFormat}
-                                setBilingualExportSeparate={setBilingualExportSeparate}
                             />
                         </div>
                     </div>

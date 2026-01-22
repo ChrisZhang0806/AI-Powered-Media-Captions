@@ -1,7 +1,7 @@
-import React, { useRef, useEffect } from 'react';
-import { ChevronRight, FileText, Files, Loader2, ChevronDown } from 'lucide-react';
-import { CaptionSegment, VideoMetadata, ExportFormat } from '../types';
-import { truncateFileName, LANGUAGES } from '../utils/helpers';
+import React, { useRef } from 'react';
+import { ChevronRight, FileText, Files, Loader2 } from 'lucide-react';
+import { CaptionSegment, VideoMetadata } from '../types';
+import { LANGUAGES } from '../utils/helpers';
 import { Language, getTranslation } from '../utils/i18n';
 import { DownloadDropdown } from './DownloadDropdown';
 import { SubtitleItem } from './SubtitleItem';
@@ -16,8 +16,6 @@ interface SubtitleListProps {
     sourceLang: string;
     targetLang: string;
     captionMode: string;
-    bilingualExportSeparate: boolean;
-    downloadDropdownFormat: ExportFormat | null;
     styleTemp: number;
     isSubtitleOnly?: boolean;
     uiLanguage: Language;
@@ -32,8 +30,6 @@ interface SubtitleListProps {
     setTargetLang: (l: string) => void;
     setStyleTemp: (t: number) => void;
     onTranslate: () => void;
-    setDownloadDropdownFormat: (format: ExportFormat | null) => void;
-    setBilingualExportSeparate: (b: boolean) => void;
 }
 
 export const SubtitleList: React.FC<SubtitleListProps> = ({
@@ -46,8 +42,6 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     sourceLang,
     targetLang,
     captionMode,
-    bilingualExportSeparate,
-    downloadDropdownFormat,
     styleTemp,
     isSubtitleOnly,
     uiLanguage,
@@ -62,8 +56,6 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     setTargetLang,
     setStyleTemp,
     onTranslate,
-    setDownloadDropdownFormat,
-    setBilingualExportSeparate
 }) => {
     const t = getTranslation(uiLanguage);
     const listRef = useRef<HTMLDivElement>(null);
@@ -155,9 +147,6 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                         captions={captions}
                         videoName={videoMeta?.name || 'subtitles'}
                         captionMode={captionMode}
-                        downloadDropdownFormat={downloadDropdownFormat}
-                        setDownloadDropdownFormat={setDownloadDropdownFormat}
-                        bilingualExportSeparate={bilingualExportSeparate}
                         uiLanguage={uiLanguage}
                         targetLang={targetLang}
                         sourceLang={sourceLang}
