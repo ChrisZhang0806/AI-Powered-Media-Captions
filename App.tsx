@@ -142,9 +142,16 @@ const App: React.FC = () => {
 
             console.log('[App] Checking backend server...');
             const isServerAvailable = await checkServerHealth();
+            const MAX_FRONTEND_SIZE = 25 * 1024 * 1024; // 25MB
 
-            if (isServerAvailable) {
-                console.log('[App] Using remote server for high-performance processing');
+            // Deciding processing strategy:
+            // 1. Files < 25MB -> Browser (FAST, no upload overhead)
+            // 2. Files >= 25MB -> Server (STABLE, handles heavy extraction/splitting)
+            // 3. Fallback: If server is down, use browser for everything
+            const shouldUseServer = isServerAvailable && videoFile.size >= MAX_FRONTEND_SIZE;
+
+            if (shouldUseServer) {
+                console.log('[App] File >= 25MB, using remote server for high-performance processing');
                 await transcribeWithServer(
                     videoFile,
                     targetLang,
@@ -184,7 +191,12 @@ const App: React.FC = () => {
                     }
                 }
             } else {
-                console.log('[App] Backend not started, using browser-only mode');
+                if (isServerAvailable && videoFile.size < MAX_FRONTEND_SIZE) {
+                    console.log('[App] Small file (< 25MB), bypassing server for direct browser processing');
+                } else if (!isServerAvailable) {
+                    console.log('[App] Backend not started, falling back to browser-only mode');
+                }
+
                 await generateCaptionsStream(
                     videoFile,
                     targetLang,
