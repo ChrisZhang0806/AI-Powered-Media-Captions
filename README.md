@@ -269,5 +269,5 @@ ai-powered-media-captions/
 ---
 
 <div align="center">
-Made with ❤️ by the community
+Made with ☕️ by the Ning Zhang @ Ottawa
 </div>
