@@ -1,11 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { FileVideo, Music, FileText } from 'lucide-react';
+import { Language, getTranslation } from '../utils/i18n';
 
 interface FileUploaderProps {
     onFileSelect: (file: File) => Promise<void>;
+    uiLanguage: Language;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect, uiLanguage }) => {
+    const t = getTranslation(uiLanguage);
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,8 +39,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect }) => {
     return (
         <div className="max-w-xl mx-auto space-y-8 py-12 text-center">
             <div className="space-y-4">
-                <h2 className="text-4xl text-slate-900 tracking-tight">AI 智能音视频转录与翻译</h2>
-                <p className="text-lg text-slate-600 ">支持极速转写、语义断句、双语翻译及 SRT/VTT 字幕加工。</p>
+                <h2 className="text-4xl text-slate-900 tracking-tight">{t.mainTitle}</h2>
+                <p className="text-lg text-slate-600 ">{t.mainSubtitle}</p>
             </div>
             <div
                 className={`group border-2 border-dashed rounded-3xl p-12 text-center transition-all cursor-pointer bg-white shadow-sm flex flex-col items-center justify-center min-h-[300px] ${isDragging
@@ -54,8 +57,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect }) => {
                     <Music className="w-8 h-8" />
                     <FileText className="w-8 h-8" />
                 </div>
-                <p className="text-xl text-slate-900">点击或拖拽上传媒体或字幕文件</p>
-                <p className="text-sm text-slate-400 mt-2 ">支持 MP4, MP3, WAV 及 SRT, VTT 格式</p>
+                <p className="text-xl text-slate-900">{t.uploadTip}</p>
+                <p className="text-sm text-slate-400 mt-2 ">{t.supportFormat}</p>
                 <input
                     type="file"
                     ref={fileInputRef}
@@ -67,3 +70,4 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect }) => {
         </div>
     );
 };
+

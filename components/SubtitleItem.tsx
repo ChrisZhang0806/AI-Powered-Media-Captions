@@ -1,6 +1,7 @@
 import React from 'react';
 import { Save, Edit2 } from 'lucide-react';
 import { CaptionSegment } from '../types';
+import { Language, getTranslation } from '../utils/i18n';
 
 interface SubtitleItemProps {
     cap: CaptionSegment;
@@ -12,6 +13,7 @@ interface SubtitleItemProps {
     onEditChange: (text: string) => void;
     onEditSave: () => void;
     isSubtitleOnly?: boolean;
+    uiLanguage: Language;
 }
 
 export const SubtitleItem: React.FC<SubtitleItemProps> = ({
@@ -23,8 +25,10 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
     onEditStart,
     onEditChange,
     onEditSave,
-    isSubtitleOnly
+    isSubtitleOnly,
+    uiLanguage
 }) => {
+    const t = getTranslation(uiLanguage);
     const textParts = cap.text.split('\n');
     const isBilingual = textParts.length > 1;
 
@@ -58,17 +62,17 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
                                     {textParts[0]}
                                 </div>
                                 <div className="flex-1 px-4 py-1 text-primary-700">
-                                    {textParts[1] || <span className="text-slate-300 italic text-[11px]">等待翻译...</span>}
+                                    {textParts[1] || <span className="text-slate-300 italic text-[11px]">{t.waitingForTranslation}</span>}
                                 </div>
                             </div>
                         ) : isBilingual ? (
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                                    <span className="text-[10px] text-slate-400 uppercase block mb-1 ">Original</span>
+                                    <span className="text-[10px] text-slate-400 uppercase block mb-1 ">{t.original}</span>
                                     {textParts[0]}
                                 </div>
                                 <div className="p-2.5 bg-primary-50/30 rounded-lg border border-primary-100/50">
-                                    <span className="text-[10px] text-primary-400 uppercase block mb-1 ">Translation</span>
+                                    <span className="text-[10px] text-primary-400 uppercase block mb-1 ">{t.translation}</span>
                                     <span className="text-primary-900">{textParts[1]}</span>
                                 </div>
                             </div>

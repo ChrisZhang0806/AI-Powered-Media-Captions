@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { ChevronRight, FileText, Files, Loader2, ChevronDown } from 'lucide-react';
 import { CaptionSegment, VideoMetadata, ExportFormat } from '../types';
 import { truncateFileName, LANGUAGES } from '../utils/helpers';
+import { Language, getTranslation } from '../utils/i18n';
 import { DownloadDropdown } from './DownloadDropdown';
 import { SubtitleItem } from './SubtitleItem';
 
@@ -19,6 +20,7 @@ interface SubtitleListProps {
     downloadDropdownFormat: ExportFormat | null;
     styleTemp: number;
     isSubtitleOnly?: boolean;
+    uiLanguage: Language;
 
     onReset: () => void;
     onJump: (time: string) => void;
@@ -48,6 +50,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     downloadDropdownFormat,
     styleTemp,
     isSubtitleOnly,
+    uiLanguage,
 
     onReset,
     onJump,
@@ -62,6 +65,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
     setDownloadDropdownFormat,
     setBilingualExportSeparate
 }) => {
+    const t = getTranslation(uiLanguage);
     const listRef = useRef<HTMLDivElement>(null);
 
     return (
@@ -86,7 +90,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                     )}
                     {/* 右侧：字幕预览标签 */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <h3 className="text-sm text-slate-900">字幕预览</h3>
+                        <h3 className="text-sm text-slate-900">{t.subtitlePreview}</h3>
                         <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
                             {captions.length}
                         </span>
@@ -117,7 +121,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
 
                     {/* 风格平衡器 */}
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg shrink-0">
-                        <span className="text-[10px] text-slate-500">直译</span>
+                        <span className="text-[10px] text-slate-500">{t.styleLiteral}</span>
                         <input
                             disabled={captions.length === 0}
                             type="range" min="0" max="1" step="0.1"
@@ -125,7 +129,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                             onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
                             className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        <span className="text-[10px] text-slate-500">创意</span>
+                        <span className="text-[10px] text-slate-500">{t.styleCreative}</span>
                     </div>
 
                     <div className="flex-1" />
@@ -136,7 +140,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-[11px] transition-all shadow-sm hover:shadow active:scale-95 disabled:opacity-40 disabled:bg-slate-300 shrink-0"
                     >
                         {isTranslating && <Loader2 className="w-3 h-3 animate-spin" />}
-                        {sourceLang === targetLang ? '无需翻译' : '立即翻译'}
+                        {sourceLang === targetLang ? t.noTranslationNeeded : t.translateNow}
                     </button>
 
                     <DownloadDropdown
@@ -146,28 +150,29 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                         downloadDropdownFormat={downloadDropdownFormat}
                         setDownloadDropdownFormat={setDownloadDropdownFormat}
                         bilingualExportSeparate={bilingualExportSeparate}
+                        uiLanguage={uiLanguage}
                     />
                 </div>
             </div>
 
             <div className="flex bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider px-4 py-2 sticky top-0 z-10 shrink-0">
-                <div className="w-32 flex-shrink-0">播放位置</div>
+                <div className="w-32 flex-shrink-0">{t.playPosition}</div>
                 {isSubtitleOnly ? (
                     <>
-                        <div className="flex-1 px-4 border-r border-slate-200">原文 ({sourceLang})</div>
-                        <div className="flex-1 px-4">译文 ({targetLang})</div>
+                        <div className="flex-1 px-4 border-r border-slate-200">{t.original} ({sourceLang})</div>
+                        <div className="flex-1 px-4">{t.translation} ({targetLang})</div>
                     </>
                 ) : (
-                    <div className="flex-1 px-4">文本内容</div>
+                    <div className="flex-1 px-4">{t.originalContent}</div>
                 )}
-                <div className="w-16 text-right">管理</div>
+                <div className="w-16 text-right">{t.manage}</div>
             </div>
 
             <div ref={listRef} className="flex-1 overflow-y-auto bg-white custom-scrollbar min-h-0" id="subtitle-list-container">
                 {captions.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-300 py-12">
                         <Files className="w-12 h-12 mb-3 opacity-20" />
-                        <p className="text-xs uppercase tracking-widest opacity-40">暂无字幕内容</p>
+                        <p className="text-xs uppercase tracking-widest opacity-40">{t.noSubtitles}</p>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-50">
@@ -183,6 +188,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                                 onEditStart={(text) => onEditStart(cap.id, text)}
                                 onEditChange={onEditChange}
                                 onEditSave={onEditSave}
+                                uiLanguage={uiLanguage}
                             />
                         ))}
                         <div className="h-8" />

@@ -8,6 +8,7 @@ import { detectLanguage } from './utils/helpers';
 import { useAudioAnalyser } from './hooks/useAudioAnalyser';
 import { useMediaSync } from './hooks/useMediaSync';
 import { useApiKey } from './hooks/useApiKey';
+import { Language, getTranslation } from './utils/i18n';
 
 // Components
 import { Header } from './components/Header';
@@ -23,9 +24,13 @@ const App: React.FC = () => {
     const [videoMeta, setVideoMeta] = useState<VideoMetadata | null>(null);
     const [captions, setCaptions] = useState<CaptionSegment[]>([]);
     const [errorMsg, setErrorMsg] = useState<string>('');
+    const [uiLanguage, setUiLanguage] = useState<Language>(() => {
+        return (localStorage.getItem('ui_language') as Language) || 'en';
+    });
+    const t = getTranslation(uiLanguage);
 
-    const [sourceLang, setSourceLang] = useState('English');
-    const [targetLang, setTargetLang] = useState('Chinese');
+    const [sourceLang, setSourceLang] = useState('英文');
+    const [targetLang, setTargetLang] = useState('中文');
     const [captionMode, setCaptionMode] = useState<CaptionMode>('Original');
     const [segmentStyle, setSegmentStyle] = useState<SegmentStyle>('natural');
     const [styleTemp, setStyleTemp] = useState(0.5);
@@ -68,7 +73,7 @@ const App: React.FC = () => {
                 const detectedLang = detectLanguage(parsedCaptions.map(c => c.text));
                 setSourceLang(detectedLang);
                 if (detectedLang === targetLang) {
-                    setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
+                    setTargetLang(detectedLang === '中文' ? '英文' : '中文');
                 }
                 setVideoFile(null);
                 setVideoMeta({
@@ -80,7 +85,7 @@ const App: React.FC = () => {
                 setStatus(AppStatus.SUCCESS);
                 setErrorMsg('');
             } else {
-                setErrorMsg('无效的字幕文件，请检查格式是否正确');
+                setErrorMsg(t.errorInvalidSub);
             }
             return;
         }
@@ -111,7 +116,7 @@ const App: React.FC = () => {
 
         // 检查是否有 API Key
         if (!apiKeyData.userApiKey) {
-            setErrorMsg('请先配置 OpenAI API Key 才能使用转录功能');
+            setErrorMsg(t.errorNoApiKey);
             apiKeyData.openPanel();
             return;
         }
@@ -149,9 +154,9 @@ const App: React.FC = () => {
                     setIsTranslating(true);
                     setProgressInfo({
                         stage: 'translating',
-                        stageLabel: '翻译中...',
+                        stageLabel: t.translating,
                         progress: 95,
-                        detail: `正在翻译为 ${targetLang}`
+                        detail: `${t.translating} ${targetLang}`
                     });
 
                     const translated = await translateSegments(lastSegments, targetLang, styleTemp, undefined, userApiKey);
@@ -195,7 +200,7 @@ const App: React.FC = () => {
             setProgressInfo(null);
         } catch (err: any) {
             setStatus(AppStatus.ERROR);
-            setErrorMsg(err.message || "生成失败");
+            setErrorMsg(err.message || t.errorProcessFailed);
             setProgressInfo(null);
         } finally {
             setIsTranslating(false);
@@ -207,7 +212,7 @@ const App: React.FC = () => {
 
         // 检查是否有 API Key
         if (!apiKeyData.userApiKey) {
-            setErrorMsg('请先配置 OpenAI API Key 才能使用翻译功能');
+            setErrorMsg(t.errorNoApiKey);
             apiKeyData.openPanel();
             return;
         }
@@ -227,7 +232,7 @@ const App: React.FC = () => {
             }, apiKeyData.userApiKey);
             setCaptionMode('Bilingual');
         } catch (err: any) {
-            setErrorMsg(err.message || "翻译失败");
+            setErrorMsg(err.message || t.errorTranslateFailed);
         } finally {
             setIsTranslating(false);
         }
@@ -251,7 +256,16 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-            <Header onReset={handleReset} apiKeyData={apiKeyData} onApiKeySuccess={() => setErrorMsg('')} />
+            <Header
+                onReset={handleReset}
+                apiKeyData={apiKeyData}
+                onApiKeySuccess={() => setErrorMsg('')}
+                uiLanguage={uiLanguage}
+                setUiLanguage={(l) => {
+                    setUiLanguage(l);
+                    localStorage.setItem('ui_language', l);
+                }}
+            />
 
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden">
                 {errorMsg && (
@@ -262,7 +276,7 @@ const App: React.FC = () => {
                 )}
 
                 {!videoFile && captions.length === 0 ? (
-                    <FileUploader onFileSelect={processFile} />
+                    <FileUploader onFileSelect={processFile} uiLanguage={uiLanguage} />
                 ) : (
                     <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-6 h-[calc(100vh-124px)]`}>
                         {/* Left Panel: Media & Processing Controls */}
@@ -291,6 +305,7 @@ const App: React.FC = () => {
                                     isTranslating={isTranslating}
                                     progressInfo={progressInfo}
                                     captionsCount={captions.length}
+                                    uiLanguage={uiLanguage}
                                     onReset={handleReset}
                                     onProcess={handleProcess}
                                 />
@@ -313,6 +328,7 @@ const App: React.FC = () => {
                                 bilingualExportSeparate={bilingualExportSeparate}
                                 downloadDropdownFormat={downloadDropdownFormat}
                                 styleTemp={styleTemp}
+                                uiLanguage={uiLanguage}
 
                                 onReset={handleReset}
                                 onJump={jumpToTime}

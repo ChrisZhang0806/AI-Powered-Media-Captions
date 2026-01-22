@@ -3,6 +3,7 @@ import { Download, ChevronDown } from 'lucide-react';
 import { ExportFormat, CaptionSegment, DownloadMode } from '../types';
 import { downloadCaptions } from '../utils/captionUtils';
 import { truncateFileName } from '../utils/helpers';
+import { Language, getTranslation } from '../utils/i18n';
 
 interface DownloadDropdownProps {
     captions: CaptionSegment[];
@@ -11,6 +12,7 @@ interface DownloadDropdownProps {
     downloadDropdownFormat: ExportFormat | null;
     setDownloadDropdownFormat: (format: ExportFormat | null) => void;
     bilingualExportSeparate: boolean;
+    uiLanguage: Language;
 }
 
 export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
@@ -20,7 +22,9 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
     downloadDropdownFormat,
     setDownloadDropdownFormat,
     bilingualExportSeparate,
+    uiLanguage,
 }) => {
+    const t = getTranslation(uiLanguage);
     const handleDownload = (format: ExportFormat, mode: DownloadMode) => {
         downloadCaptions(captions, format, videoName.split('.')[0] || 'subtitles', mode, bilingualExportSeparate);
         setDownloadDropdownFormat(null);
@@ -34,19 +38,19 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
                     onClick={() => handleDownload(format, 'bilingual')}
                     className="w-full text-left px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                 >
-                    双语对照
+                    {t.bilingual对照}
                 </button>
                 <button
                     onClick={() => handleDownload(format, 'translated')}
                     className="w-full text-left px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 border-t border-slate-50"
                 >
-                    仅译文
+                    {t.onlyTranslation}
                 </button>
                 <button
                     onClick={() => handleDownload(format, 'original')}
                     className="w-full text-left px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 border-t border-slate-50"
                 >
-                    仅原文
+                    {t.onlyOriginal}
                 </button>
             </div>
         </>
@@ -66,7 +70,7 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] border border-slate-200 transition-colors disabled:opacity-40"
                 >
-                    <Download className="w-3 h-3" /> SRT {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'SRT' ? 'rotate-180' : ''}`} />}
+                    <Download className="w-3 h-3" /> {t.downloadSrt} {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'SRT' ? 'rotate-180' : ''}`} />}
                 </button>
                 {captionMode !== 'Original' && downloadDropdownFormat === 'SRT' && renderDropdownContent('SRT')}
             </div>
@@ -83,7 +87,7 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[11px] border border-slate-200 transition-colors disabled:opacity-40"
                 >
-                    <Download className="w-3 h-3" /> VTT {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'VTT' ? 'rotate-180' : ''}`} />}
+                    <Download className="w-3 h-3" /> {t.downloadVtt} {captionMode !== 'Original' && <ChevronDown className={`w-3 h-3 transition-transform ${downloadDropdownFormat === 'VTT' ? 'rotate-180' : ''}`} />}
                 </button>
                 {captionMode !== 'Original' && downloadDropdownFormat === 'VTT' && renderDropdownContent('VTT')}
             </div>
