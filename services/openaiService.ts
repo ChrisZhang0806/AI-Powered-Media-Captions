@@ -8,11 +8,7 @@ const openai = new OpenAI({
     dangerouslyAllowBrowser: true // Allowed for browser usage (demo only)
 });
 
-const SEGMENT_STYLE_PROMPTS: Record<SegmentStyle, string> = {
-    compact: 'Extremely short sentences. Break frequently. Maximum 7 words per segment. Suitable for fast-paced subtitles.',
-    natural: 'Break sentences into short, readable subtitle lines. Use commas to split long thoughts. Maximum 10-12 words per line.',
-    detailed: 'Follow natural speech flow but avoid extremely long blocks. Break at logical pauses.'
-};
+
 
 /**
  * Format Whisper timestamps (seconds) to SRT format (HH:MM:SS,mmm)
@@ -69,7 +65,6 @@ const transcribeSegment = async (
         response_format: 'verbose_json',
         timestamp_granularities: ['segment'],
         language: language === 'auto' ? undefined : language?.toLowerCase().slice(0, 2),
-        prompt: SEGMENT_STYLE_PROMPTS[segmentStyle],
     });
 
     // Whisper returns segments containing start, end, text

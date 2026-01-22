@@ -59,20 +59,7 @@ const upload = multer({
 // 存储任务状态
 const tasks = new Map();
 
-/**
- * 断句风格对应的 Whisper prompt (Context Priming)
- * 原理：Whisper 会模仿 Prompt 的风格，而不是执行指令
- */
-const SEGMENT_STYLE_PROMPTS = {
-    // Compact (TikTok/Reels 风格): 极短，节奏快
-    compact: "Hi. Welcome. This is a video. Short lines. Fast pace. Like this.",
 
-    // Natural (Netflix 标准风格): 平衡，标点完整
-    natural: "Hello everyone, welcome to the show. We will be discussing subtitles today, focusing on readability and flow.",
-
-    // Detailed (演讲/长难句): 允许从句，逻辑完整
-    detailed: "In this comprehensive tutorial, we are going to explore the intricacies of natural language processing, specifically how it handles complex sentence structures."
-};
 
 /**
  * 从视频中提取音频
@@ -167,11 +154,8 @@ function splitAudio(inputPath, outputDir, maxDuration = 600) {
 async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natural', userContext = '', userApiKey = null) {
     const audioFile = fs.createReadStream(audioPath);
 
-    const stylePrompt = SEGMENT_STYLE_PROMPTS[style] || SEGMENT_STYLE_PROMPTS.natural;
-    // 合并用户背景知识和风格提示，Whisper prompt 限制在约 244 字符
-    const fullPrompt = userContext
-        ? `${userContext.substring(0, 150)}. ${stylePrompt}`
-        : stylePrompt;
+    // 仅使用用户提供的 Context，移除原本的 Style Prompt
+    const fullPrompt = userContext || "";
 
     // 如果用户提供了自己的 Key，创建一个临时的 OpenAI 实例
     const client = userApiKey ? new OpenAI({ apiKey: userApiKey }) : openai;
@@ -191,9 +175,8 @@ async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natura
         text: seg.text.trim()
     }));
 
-    // 2. 智能二次切割 (针对英文长句)
-    // 行业标准: Netflix/BBC 单行最大 42 字符，双行最大 84 字符
-    const maxChars = style === 'compact' ? 32 : (style === 'natural' ? 42 : 80);
+    // 2. 智能二次切割 (强制 42 字符上限)
+    const maxChars = 42;
     return smartSplit(segments, maxChars);
 }
 
@@ -202,239 +185,142 @@ async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natura
  * 中文：使用贪婪累加法 (Greedy Accumulator)
  * 英文：保持原有逻辑
  */
+/**
+ * 语义感知智能切割长句 (Unified Greedy Accumulator Strategy)
+ * 统一策略：无论是中文还是英文，都使用贪婪累加法，严格控制字符上限。
+ */
 function smartSplit(segments, maxChars) {
     const result = [];
 
-    // 扩充"禁止作为行尾"的单词列表 (Prepositions, Articles, Conjunctions, Pronouns, Be Verbs)
-    const DO_NOT_END_WITH = new Set([
-        // Articles & Determiners
-        'the', 'a', 'an', 'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'its', 'our', 'their',
-        // Prepositions (关键！英语断句核心)
-        'of', 'to', 'in', 'for', 'with', 'on', 'at', 'from', 'by', 'about', 'as', 'into', 'like', 'through', 'after', 'over', 'between', 'out',
-        // Conjunctions
-        'and', 'but', 'or', 'so', 'because', 'if', 'when', 'while', 'since',
-        // Verbs (Be verbs - 不要把 "is" 单独留在行尾)
-        'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does', 'did', 'it'
-    ]);
+    // 核心参数配置
+    // 英文/通用：32 (Max), 24 (Ideal)
+    const DEFAULT_MAX = maxChars;
+    const DEFAULT_IDEAL = Math.floor(maxChars * 0.75);
 
-    // 最小换行长度 (用于标点优先换行)
-    const MIN_LINE_LEN = 15;
+    // 中文：12 (Max), 10 (Ideal)
+    const CN_MAX = 12;
+    const CN_IDEAL = 10;
+
+    const MIN_MERGE_LEN = 10;
 
     for (const seg of segments) {
         const text = seg.text;
-        const isChinese = /[\u4e00-\u9fa5]/.test(text);
 
-        // ==========================
-        // 中文断句策略 (贪婪累加法)
-        // ==========================
-        if (isChinese) {
-            // --- 关键参数配置 ---
-            const MIN_MERGE_LEN = 10;  // 累积池低于这个长度，无条件合并下一句
-            const MAX_LINE_LEN = 22;   // 超过这个长度，必须强制换行
-            const IDEAL_LEN = 16;      // 理想换行长度
+        // 步骤 1: 预处理和切分 (Tokenize)
+        const isChineseText = isChinese(text);
 
-            // 1. 首先按标点预切分
+        // 动态配置
+        const MAX_LINE_LEN = isChineseText ? CN_MAX : DEFAULT_MAX;
+        const IDEAL_LEN = isChineseText ? CN_IDEAL : DEFAULT_IDEAL;
+
+        let chunks = [];
+
+        if (isChineseText) {
+            // 中文切分逻辑
             const punctuation = /([。！？，、；：,.;:—])/;
             const rawChunks = text.split(punctuation).filter(s => s.length > 0);
-
             // 把标点符号合并回前一个文本块
-            const textChunks = [];
             for (let i = 0; i < rawChunks.length; i++) {
-                if (punctuation.test(rawChunks[i]) && textChunks.length > 0) {
-                    textChunks[textChunks.length - 1] += rawChunks[i];
+                if (punctuation.test(rawChunks[i]) && chunks.length > 0) {
+                    chunks[chunks.length - 1] += rawChunks[i];
                 } else if (rawChunks[i].trim()) {
-                    textChunks.push(rawChunks[i].trim());
+                    chunks.push(rawChunks[i].trim());
                 }
             }
-
-            // 2. 贪婪累加法
-            const finalLines = [];
-            let buffer = "";
-
-            for (let i = 0; i < textChunks.length; i++) {
-                const current = textChunks[i].trim();
-                if (!current) continue;
-
-                // 如果杯子是空的，直接倒入
-                if (!buffer) {
-                    buffer = current;
-                    continue;
-                }
-
-                // 预判：如果合并后长度会"爆杯"，必须先结算当前杯子
-                if (buffer.length + current.length > MAX_LINE_LEN) {
-                    finalLines.push(buffer);
-                    buffer = current;
-                    continue;
-                }
-
-                // 决策：合并还是换行？
-
-                // 情况 A：杯子里的水还太少 -> 强制合并
-                if (buffer.length < MIN_MERGE_LEN) {
-                    buffer += current;
-                }
-                // 情况 B：杯子已经差不多满了，且当前句是语义结束 (带句末标点) -> 结算
-                else if (/[。！？]$/.test(buffer) || buffer.length >= IDEAL_LEN) {
-                    finalLines.push(buffer);
-                    buffer = current;
-                }
-                // 情况 C：虽然比较长了，但还没爆，且前一句没说完 -> 继续合并
-                else {
-                    buffer += current;
-                }
-            }
-
-            // 别忘了倒掉最后一杯水
-            if (buffer) finalLines.push(buffer);
-
-            // 3. 分配时间戳 (按字符比例)
-            const duration = seg.end - seg.start;
-            const totalChars = finalLines.reduce((sum, line) => sum + line.length, 0);
-            let runningStart = seg.start;
-
-            for (let i = 0; i < finalLines.length; i++) {
-                const line = finalLines[i];
-                const lineRatio = line.length / totalChars;
-                const lineDuration = duration * lineRatio;
-                const endTime = (i === finalLines.length - 1) ? seg.end : runningStart + lineDuration;
-
-                result.push({
-                    start: runningStart,
-                    end: endTime,
-                    text: line
-                });
-                runningStart = endTime;
-            }
-            continue;
+        } else {
+            // 英文/通用切分逻辑：按单词切分
+            chunks = text.split(/\s+/).filter(w => w.length > 0);
         }
 
-        // ==========================
-        // 英文断句逻辑 (优化版: 标点优先 + 禁止虚词行尾)
-        // ==========================
-        const words = text.split(/\s+/);
-        let currentSegments = [];
-        let remainingWords = [...words];
+        // 步骤 2: 贪婪累加法 (Greedy Accumulator)
+        const finalLines = [];
+        let buffer = "";
 
-        while (remainingWords.length > 0) {
-            let currentText = '';
-            let bestBreakIndex = 0;
-            let punctuationBreakIndex = -1; // 标点优先换行位置
+        for (let i = 0; i < chunks.length; i++) {
+            const current = chunks[i];
 
-            for (let i = 0; i < remainingWords.length; i++) {
-                const word = remainingWords[i];
-                const testText = currentText ? `${currentText} ${word}` : word;
+            const separator = (buffer && !isChineseText) ? " " : "";
+            const predictedLen = buffer.length + separator.length + current.length;
 
-                // 检查当前单词是否以标点结尾 (用于标点优先换行)
-                if (/[.,?!;:]$/.test(word) && testText.length >= MIN_LINE_LEN) {
-                    punctuationBreakIndex = i + 1;
-                }
-
-                // 超过 maxChars，需要换行
-                if (testText.length > maxChars && currentText.length > 0) {
-                    // 优先使用标点位置换行
-                    if (punctuationBreakIndex > 0 && punctuationBreakIndex <= i) {
-                        bestBreakIndex = punctuationBreakIndex;
-                    } else {
-                        bestBreakIndex = i;
-
-                        // 向前回溯寻找标点符号
-                        for (let j = i; j > Math.max(0, i - 4); j--) {
-                            if (/[.,?!;:]$/.test(remainingWords[j - 1])) {
-                                bestBreakIndex = j;
-                                break;
-                            }
-                        }
-
-                        // 避免在虚词/介词/冠词处断开 (使用扩充的列表)
-                        if (bestBreakIndex === i) {
-                            while (bestBreakIndex > Math.max(1, i - 3)) {
-                                const lastWord = remainingWords[bestBreakIndex - 1].toLowerCase().replace(/[^\w]/g, '');
-                                if (DO_NOT_END_WITH.has(lastWord)) {
-                                    bestBreakIndex--;
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    break;
-                }
-
-                // 标点优先换行：遇到句末标点且长度适中，直接换行
-                if (/[.?!]$/.test(word) && testText.length >= MIN_LINE_LEN && testText.length <= maxChars * 0.9) {
-                    currentText = testText;
-                    bestBreakIndex = i + 1;
-                    break;
-                }
-
-                currentText = testText;
-                bestBreakIndex = i + 1;
+            if (!buffer) {
+                buffer = current;
+                continue;
             }
 
-            // 合并过短的尾部
-            if (remainingWords.length - bestBreakIndex < 3 && currentSegments.length > 0) {
-                bestBreakIndex = remainingWords.length;
+            // 预判 "爆杯"
+            if (predictedLen > MAX_LINE_LEN) {
+                finalLines.push(buffer);
+                buffer = current;
+                continue;
             }
 
-            const segmentWords = remainingWords.splice(0, bestBreakIndex);
-            if (segmentWords.length > 0) {
-                currentSegments.push(segmentWords.join(' '));
+            // 决策逻辑
+            // A. 杯子水太少 -> 强制合并
+            if (buffer.length < MIN_MERGE_LEN) {
+                buffer += separator + current;
+            }
+            // B. 杯子已经差不多满 (IDEAL) 或 当前是句末 -> 结算
+            else if (/[。！？.?!]$/.test(buffer) || buffer.length >= IDEAL_LEN) {
+                finalLines.push(buffer);
+                buffer = current;
+            }
+            // C. 还没爆 -> 继续装
+            else {
+                buffer += separator + current;
             }
         }
 
-        // 分配时间戳
-        const totalChars = text.length;
-        let runningStartTimeEnglish = seg.start;
-        const totalDurationEnglish = seg.end - seg.start;
+        if (buffer) finalLines.push(buffer);
 
-        currentSegments.forEach((textPart, index) => {
-            const partRatio = textPart.length / totalChars;
-            const partDuration = totalDurationEnglish * partRatio;
-            const endTime = (index === currentSegments.length - 1) ? seg.end : runningStartTimeEnglish + partDuration;
+        // 步骤 3: 分配时间戳
+        const duration = seg.end - seg.start;
+        const totalLen = finalLines.reduce((sum, line) => sum + line.length, 0);
+        let runningStart = seg.start;
+
+        for (let i = 0; i < finalLines.length; i++) {
+            const line = finalLines[i];
+            const ratio = totalLen > 0 ? (line.length / totalLen) : (1 / finalLines.length);
+            const lineDuration = duration * ratio;
+
+            const endTime = (i === finalLines.length - 1) ? seg.end : runningStart + lineDuration;
 
             result.push({
-                start: runningStartTimeEnglish,
+                start: runningStart,
                 end: endTime,
-                text: textPart.trim()
+                text: line
             });
-            runningStartTimeEnglish = endTime;
-        });
+            runningStart = endTime;
+        }
     }
 
-    // ==========================
-    // 全局合并策略 (Global Merge)
-    // ==========================
-    // 中文已通过贪婪累加法处理，此处主要针对英文短句合并
+    // 后处理：合并极短的片段 (Global Merge)
     const finalResult = [];
-
     for (let i = 0; i < result.length; i++) {
         let current = result[i];
-
-        // 1. 如果当前行本身就是空的，跳过
         if (!current.text) continue;
 
-        const isChinese = /[\u4e00-\u9fa5]/.test(current.text);
+        const next = result[i + 1];
+        if (next) {
+            const isAnyChinese = isChinese(current.text) || isChinese(next.text);
+            const limit = isAnyChinese ? CN_MAX : DEFAULT_MAX;
 
-        // 中文已经在贪婪累加法中处理完毕，直接保留
+            const separator = (isChinese(current.text) || isChinese(next.text)) ? "" : " ";
+            const mergedLen = current.text.length + separator.length + next.text.length;
 
-        // 原有的英文合并逻辑
-        if (!isChinese) {
-            const next = result[i + 1];
-            if (next && !/[.?!]/.test(current.text) && (current.text.length + next.text.length) < maxChars * 1.5) {
-                const nextIsShort = next.text.split(' ').length <= 2;
-                if (nextIsShort) {
-                    current.end = next.end;
-                    current.text = `${current.text} ${next.text}`;
-                    i++;
-                }
+            if (mergedLen <= limit && !/[。！？.?!]$/.test(current.text)) {
+                current.end = next.end;
+                current.text = current.text + separator + next.text;
+                i++;
             }
         }
-
         finalResult.push(current);
     }
-
     return finalResult;
+}
+
+// 辅助函数
+function isChinese(str) {
+    return /[\u4e00-\u9fa5]/.test(str);
 }
 
 /**
