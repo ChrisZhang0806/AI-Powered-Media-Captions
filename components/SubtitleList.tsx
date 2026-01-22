@@ -137,7 +137,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                     <button
                         disabled={captions.length === 0 || isTranslating || sourceLang === targetLang}
                         onClick={onTranslate}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-[11px] transition-all shadow-sm hover:shadow active:scale-95 disabled:opacity-40 disabled:bg-slate-300 shrink-0"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] transition-all shadow-sm hover:shadow active:scale-95 disabled:opacity-40 disabled:bg-slate-300 shrink-0"
                     >
                         {isTranslating && <Loader2 className="w-3 h-3 animate-spin" />}
                         {sourceLang === targetLang ? t.noTranslationNeeded : t.translateNow}
@@ -157,7 +157,7 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
 
             <div className="flex bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider px-4 py-2 sticky top-0 z-10 shrink-0">
                 <div className="w-32 flex-shrink-0">{t.playPosition}</div>
-                {isSubtitleOnly ? (
+                {captions.some(c => c.text.includes('\n')) ? (
                     <>
                         <div className="flex-1 px-4 border-r border-slate-200">{t.original} ({t['lang' + sourceLang as keyof typeof t] || sourceLang})</div>
                         <div className="flex-1 px-4">{t.translation} ({t['lang' + targetLang as keyof typeof t] || targetLang})</div>
