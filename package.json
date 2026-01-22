@@ -1,7 +1,26 @@
 {
-  "name": "媒体转字幕工具",
-  "private": true,
-  "version": "0.0.0",
+  "name": "ai-powered-media-captions",
+  "version": "1.0.0",
+  "description": "AI-powered automatic subtitle generation and translation tool using OpenAI Whisper and GPT",
+  "author": "AI Powered Media Captions Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChrisZhang0806/AI-Powered-Media-Captions.git"
+  },
+  "keywords": [
+    "subtitle",
+    "caption",
+    "transcription",
+    "translation",
+    "whisper",
+    "openai",
+    "ai",
+    "video",
+    "audio",
+    "srt",
+    "vtt"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,5 +40,8 @@
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
