@@ -55,6 +55,8 @@ export const translations = {
         noTranslationNeeded: '无需翻译',
         translateNow: '立即翻译',
         waitingForTranslation: '等待翻译...',
+        proofreading: '智能校对中...',
+        proofreadingTerms: '正在校对专业术语...',
         original: '原文',
         translation: '译文',
 
@@ -149,6 +151,8 @@ export const translations = {
         noTranslationNeeded: 'No Translation Needed',
         translateNow: 'Translate Now',
         waitingForTranslation: 'Waiting for translation...',
+        proofreading: 'Proofreading...',
+        proofreadingTerms: 'Refining terminology...',
         original: 'Original',
         translation: 'Translation',
 

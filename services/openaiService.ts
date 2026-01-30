@@ -356,14 +356,14 @@ export const translateSegments = async (
 
     let styleDesc = "";
     if (styleStrength <= 33) {
-        // ENHANCED LITERAL
-        styleDesc = "LITERAL. Translate with technical precision. DO NOT use creative synonyms. Keep the sentence structure identical to the source. If the source is a fragment, keep it as a fragment. Strictly avoid adding any personal interpretations.";
+        // LITERAL - 直译
+        styleDesc = "Literal and precise. Maintain the original sentence structure as much as possible.";
     } else if (styleStrength <= 66) {
-        // BALANCED
-        styleDesc = "BALANCED. Focus on clarity and readability. Use standard, clear language that would be appropriate for a general audience. Ensure the tone is natural while remaining faithful to the core meaning.";
+        // BALANCED - 平衡
+        styleDesc = "Balanced. Natural sounding in the target language while remaining faithful to the original meaning.";
     } else {
-        // CREATIVE LOCALIZATION
-        styleDesc = "CREATIVE. Act as a professional localizer. Rewrite metaphors into culturally equivalent ones. Use informal, catchy, or dramatic language suitable for social media or entertainment. Prioritize 'vibe', emotional impact, and natural flow over word-for-word accuracy.";
+        // CREATIVE - 创意/意译
+        styleDesc = "Creative and Stylized. Localize idioms, prioritize emotional impact and flow over word-for-word accuracy. Use slang if appropriate for the context.";
     }
 
     // Detect source language

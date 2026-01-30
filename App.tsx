@@ -243,15 +243,32 @@ const App: React.FC = () => {
 
         setIsTranslating(true);
         setErrorMsg('');
-        const originalCaptions = [...captions]; // Backup original captions
+
+        // Extract original text (remove any existing translation)
+        const originalCaptions = captions.map(cap => ({
+            ...cap,
+            text: cap.text.split('\n')[0] // Keep only original text
+        }));
+
+        // Initialize with empty translation placeholder (shows "正在翻译中..." / "Waiting for translation...")
+        const initialPlaceholder = originalCaptions.map(cap => ({
+            ...cap,
+            text: `${cap.text}\n` // Empty second line triggers placeholder display
+        }));
+        setCaptions(initialPlaceholder);
 
         try {
             await translateSegments(originalCaptions, targetLang, styleTemp, (translatedChunks) => {
                 // Real-time stream merge: Original + Translation
-                const merged = originalCaptions.map((orig, i) => ({
-                    ...orig,
-                    text: `${orig.text}\n${translatedChunks[i]?.text || ''}`
-                }));
+                const merged = originalCaptions.map((orig, i) => {
+                    const translatedText = translatedChunks[i]?.text || '';
+                    // Only show translation if it's different from original (actual translation received)
+                    const isActualTranslation = translatedText && translatedText !== orig.text;
+                    return {
+                        ...orig,
+                        text: `${orig.text}\n${isActualTranslation ? translatedText : ''}`
+                    };
+                });
                 setCaptions(merged);
             }, apiKeyData.userApiKey, uiLanguage);
             setCaptionMode('Bilingual');
