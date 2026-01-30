@@ -1,6 +1,6 @@
 {
   "name": "ai-powered-media-captions",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "AI-powered automatic subtitle generation and translation tool using OpenAI Whisper and GPT",
   "author": "AI Powered Media Captions Contributors",
   "license": "MIT",
@@ -21,11 +21,16 @@
     "srt",
     "vtt"
   ],
+  "main": "electron/electron.js",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -38,10 +43,64 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "build": {
+    "appId": "com.aipowered.mediacaptions",
+    "productName": "AI Media Captions",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.video",
+      "icon": "public/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "extraResources": [
+      {
+        "from": "ffmpeg-bin/${os}",
+        "to": "ffmpeg",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!uploads",
+          "!outputs"
+        ]
+      },
+      {
+        "from": "dist",
+        "to": "dist",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   }
 }

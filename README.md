@@ -28,7 +28,7 @@
 
 | Platform | Download | Architecture |
 |----------|----------|--------------|
-| 🍎 macOS | [AI Media Captions-1.0.0-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions-1.0.0-arm64.dmg) | Apple Silicon (M1/M2/M3) |
+| 🍎 macOS | [AI Media Captions-1.0.2-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.2/AI.Media.Captions-1.0.2-arm64.dmg) | Apple Silicon (M1/M2/M3) |
 | 🪟 Windows | [AI Media Captions Setup 1.0.0-x64.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0-x64.exe) | x64 (Intel/AMD) ⭐ |
 | 🪟 Windows | [AI Media Captions Setup 1.0.0.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0.exe) | ARM64 |
 
@@ -169,7 +169,7 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 
 | 平台 | 下载 | 架构 |
 |------|------|------|
-| 🍎 macOS | [AI Media Captions-1.0.0-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions-1.0.0-arm64.dmg) | Apple Silicon (M1/M2/M3) |
+| 🍎 macOS | [AI Media Captions-1.0.2-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.2/AI.Media.Captions-1.0.2-arm64.dmg) | Apple Silicon (M1/M2/M3) |
 | 🪟 Windows | [AI Media Captions Setup 1.0.0-x64.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0-x64.exe) | x64 (Intel/AMD) ⭐ 推荐 |
 | 🪟 Windows | [AI Media Captions Setup 1.0.0.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0.exe) | ARM64 |
 
