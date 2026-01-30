@@ -24,6 +24,16 @@
 - 📥 **Export Options** - Download as SRT or VTT format (bilingual or single language)
 - 🎨 **Modern UI** - Beautiful, responsive interface with dark mode support
 
+## 📦 Download Desktop App
+
+| Platform | Download | Architecture |
+|----------|----------|--------------|
+| 🍎 macOS | [AI Media Captions-1.0.0-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions-1.0.0-arm64.dmg) | Apple Silicon (M1/M2/M3) |
+| 🪟 Windows | [AI Media Captions Setup 1.0.0-x64.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0-x64.exe) | x64 (Intel/AMD) ⭐ |
+| 🪟 Windows | [AI Media Captions Setup 1.0.0.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0.exe) | ARM64 |
+
+> 📌 [View all releases](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -154,6 +164,16 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 - ⚡ **实时预览** - 媒体播放与字幕高亮同步显示
 - 📥 **导出选项** - 支持导出 SRT 或 VTT 格式（双语或单语）
 - 🎨 **现代界面** - 优美响应式界面，支持深色模式
+
+## 📦 下载桌面应用
+
+| 平台 | 下载 | 架构 |
+|------|------|------|
+| 🍎 macOS | [AI Media Captions-1.0.0-arm64.dmg](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions-1.0.0-arm64.dmg) | Apple Silicon (M1/M2/M3) |
+| 🪟 Windows | [AI Media Captions Setup 1.0.0-x64.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0-x64.exe) | x64 (Intel/AMD) ⭐ 推荐 |
+| 🪟 Windows | [AI Media Captions Setup 1.0.0.exe](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases/download/v1.0.0/AI.Media.Captions.Setup.1.0.0.exe) | ARM64 |
+
+> 📌 [查看所有版本](https://github.com/ChrisZhang0806/AI-Powered-Media-Captions/releases)
 
 ## 🚀 快速开始
 
