@@ -384,7 +384,7 @@ export const translateSegments = async (
 
         try {
             const response = await client.chat.completions.create({
-                model: 'gpt-5-nano',
+                model: 'gpt-4o',
                 messages: [
                     {
                         role: 'system',
@@ -449,7 +449,7 @@ export const refineSegments = async (
 
     try {
         const response = await client.chat.completions.create({
-            model: 'gpt-5-nano',
+            model: 'gpt-4o',
             messages: [
                 {
                     role: 'system',
