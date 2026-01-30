@@ -12,6 +12,16 @@ import OpenAI from 'openai';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Electron 环境下设置 FFmpeg 路径
+if (process.env.FFMPEG_PATH) {
+    console.log('[FFmpeg] Using custom path:', process.env.FFMPEG_PATH);
+    ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
+}
+if (process.env.FFPROBE_PATH) {
+    console.log('[FFprobe] Using custom path:', process.env.FFPROBE_PATH);
+    ffmpeg.setFfprobePath(process.env.FFPROBE_PATH);
+}
+
 // 配置
 const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');

@@ -36,3 +36,9 @@ server/outputs
 
 # typescript
 *.tsbuildinfo
+
+# ffmpeg binaries (large files, download during build)
+ffmpeg-bin/
+
+# electron build output
+release/
