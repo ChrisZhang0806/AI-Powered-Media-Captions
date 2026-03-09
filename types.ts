@@ -13,7 +13,7 @@ export enum AppStatus {
   ERROR = 'ERROR'
 }
 
-export type ExportFormat = 'SRT' | 'VTT';
+export type ExportFormat = 'SRT' | 'VTT' | 'TXT';
 
 export interface VideoMetadata {
   name: string;

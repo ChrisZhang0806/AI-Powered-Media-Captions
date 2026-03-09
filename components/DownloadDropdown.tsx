@@ -50,7 +50,11 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
         { value: 'original', label: t.onlyOriginal },
     ];
 
-    const formatOptions: ExportFormat[] = ['SRT', 'VTT'];
+    const formatOptions: { value: ExportFormat; label: string }[] = [
+        { value: 'SRT', label: 'SRT' },
+        { value: 'VTT', label: 'VTT' },
+        { value: 'TXT', label: t.textOnly },
+    ];
 
     return (
         <div className="relative">
@@ -105,26 +109,26 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
                             </div>
                         )}
 
-                        {/* Format Selection - radio options */}
+                        {/* Format Selection */}
                         <div className="px-2.5 py-2">
                             <label className="text-[9px] text-slate-400 uppercase tracking-wider mb-1 block">
                                 {t.formatType}
                             </label>
                             <div className="space-y-0.5">
-                                {formatOptions.map(format => (
+                                {formatOptions.map(option => (
                                     <label
-                                        key={format}
+                                        key={option.value}
                                         className="flex items-center gap-1.5 px-1.5 py-1 rounded hover:bg-slate-50 cursor-pointer transition-colors"
                                     >
                                         <input
                                             type="radio"
                                             name="formatType"
-                                            value={format}
-                                            checked={selectedFormat === format}
-                                            onChange={() => setSelectedFormat(format)}
+                                            value={option.value}
+                                            checked={selectedFormat === option.value}
+                                            onChange={() => setSelectedFormat(option.value)}
                                             className="w-3 h-3 text-slate-700 border-slate-300 focus:ring-slate-500"
                                         />
-                                        <span className="text-[11px] text-slate-700">{format}</span>
+                                        <span className="text-[11px] text-slate-700">{option.label}</span>
                                     </label>
                                 ))}
                             </div>
@@ -135,3 +139,4 @@ export const DownloadDropdown: React.FC<DownloadDropdownProps> = ({
         </div>
     );
 };
+

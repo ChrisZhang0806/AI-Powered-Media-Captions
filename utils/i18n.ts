@@ -31,6 +31,7 @@ export const translations = {
         styleCreative: '创意',
         styleBalanced: '平衡',
         startProcess: '开始 AI 解析',
+        textOnly: '仅输出文本（不含时间轴）',
 
         processing: '正在 AI 智能解析...',
         engineStarting: 'AI 引擎启动中',
@@ -127,6 +128,7 @@ export const translations = {
         styleCreative: 'Creative',
         styleBalanced: 'Balanced',
         startProcess: 'Start AI Processing',
+        textOnly: 'Text only (no timestamps)',
 
         processing: 'AI Processing...',
         engineStarting: 'Starting AI Engine...',

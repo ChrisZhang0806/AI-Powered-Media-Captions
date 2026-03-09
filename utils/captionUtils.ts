@@ -26,6 +26,9 @@ export const generateFileContent = (captions: CaptionSegment[], format: ExportFo
     });
     return content;
   }
+  if (format === 'TXT') {
+    return captions.map(cap => cap.text).join('\n');
+  }
   return '';
 };
 
