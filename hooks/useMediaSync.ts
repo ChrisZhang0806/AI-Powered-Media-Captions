@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type RefObject } from 'react';
 import { CaptionSegment } from '../types';
 import { timeToSeconds } from '../utils/helpers';
 
 interface UseMediaSyncOptions {
-    mediaRef: React.RefObject<HTMLAudioElement | HTMLVideoElement | null>;
+    mediaRef: RefObject<HTMLAudioElement | HTMLVideoElement | null>;
     captions: CaptionSegment[];
 }
 

@@ -53,29 +53,39 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
     };
 
     const showTranslationSettings = captionMode !== 'Original';
+    const progressValue = Math.min(100, Math.max(0, progressInfo?.progress ?? (captionsCount > 0 ? 82 : 18)));
 
     return (
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3 h-[390px] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-slate-50 rounded-lg">
-                        {isAudio ? <Music className="w-4 h-4 text-slate-500" /> : <FileVideo className="w-4 h-4 text-slate-500" />}
+        <div className="app-panel flex min-h-[360px] flex-col rounded-lg p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-950/5 pb-3 dark:border-white/10">
+                <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-950/5 dark:bg-white/10">
+                        {isAudio ? <Music className="w-4 h-4 text-zinc-600 dark:text-zinc-300" /> : <FileVideo className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />}
                     </div>
-                    <span className=" text-sm text-slate-900 max-w-[320px]">{truncateFileName(videoMeta?.name || '')}</span>
+                    <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50" title={videoMeta?.name || ''}>{truncateFileName(videoMeta?.name || '')}</span>
                 </div>
-                <button onClick={onReset} className="text-slate-400 hover:text-red-500 p-2 transition-colors rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
+                <button
+                    type="button"
+                    onClick={onReset}
+                    aria-label={uiLanguage === 'zh' ? '移除文件' : 'Remove file'}
+                    className="focus-apple flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-400/10 dark:hover:text-red-300"
+                >
+                    <Trash2 className="w-4 h-4" />
+                </button>
             </div>
 
             {status === AppStatus.IDLE && (
-                <div className="space-y-3">
-                    <div className="space-y-1.5">
-                        <label className="text-[11px] text-slate-400 uppercase">{t.processMode}</label>
-                        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-50 rounded-lg border border-slate-100">
+                <div className="mt-4 flex flex-1 flex-col gap-4">
+                    <div className="space-y-2">
+                        <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t.processMode}</label>
+                        <div className="grid grid-cols-3 gap-1 rounded-lg border border-zinc-200/70 bg-zinc-950/5 p-1 dark:border-white/10 dark:bg-white/10">
                             {(['Original', 'Translation', 'Bilingual'] as CaptionMode[]).map(m => (
                                 <button
+                                    type="button"
                                     key={m}
                                     onClick={() => setCaptionMode(m)}
-                                    className={`py-1.5 text-[11px] rounded-md transition-all ${captionMode === m ? 'bg-white text-primary-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                                    aria-pressed={captionMode === m}
+                                    className={`focus-apple min-h-10 rounded-md px-2 text-xs font-medium transition-all ${captionMode === m ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
                                 >
                                     {m === 'Original' ? t.originalOnly : m === 'Translation' ? t.translationOnly : t.bilingual}
                                 </button>
@@ -83,67 +93,80 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                         </div>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-slate-400 uppercase tracking-tight">{t.contextPrompt}</label>
-                            <span className="text-[9px] text-slate-400 italic px-1">{t.contextPromptTip}</span>
+                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t.contextPrompt}</label>
+                            <span className="text-[11px] text-zinc-400 dark:text-zinc-500">{t.contextPromptTip}</span>
                         </div>
                         <textarea
                             value={contextPrompt}
                             onChange={(e) => setContextPrompt(e.target.value)}
                             placeholder={t.contextPromptPlaceholder}
-                            className="w-full h-14 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-slate-200 focus:ring-0 p-2 bg-slate-50/50 resize-none font-normal leading-relaxed"
+                            className="focus-apple h-20 w-full resize-none rounded-lg border border-zinc-200/80 bg-white/70 p-3 text-sm leading-relaxed text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
                         />
                     </div>
 
-                    <div className={`grid grid-cols-[120px_1fr] gap-3 transition-opacity duration-200 ${showTranslationSettings ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'}`}>
-                        <div className="space-y-1">
-                            <label className="text-[11px] text-slate-400 uppercase">{t.targetLang}</label>
-                            <select
-                                value={targetLang}
-                                onChange={(e) => setTargetLang(e.target.value)}
-                                className="w-full text-xs border-slate-200 rounded-lg focus:ring-primary-500 py-1.5 bg-slate-50"
-                            >
-                                {LANGUAGES.map(l => (
-                                    <option key={l} value={l}>
-                                        {t['lang' + l as keyof typeof t] || l}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-[11px] text-slate-400 uppercase">{t.transStyle}</label>
-                            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100 h-[34px]">
-                                <span className={`text-[10px] transition-colors ${styleTemp <= 0.3 ? 'text-primary-600 font-medium' : 'text-slate-400'}`}>{t.styleLiteral}</span>
-                                <input
-                                    type="range" min="0" max="1" step="0.1"
-                                    value={styleTemp}
-                                    onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
-                                    className="mx-3 flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800"
-                                />
-                                <span className={`text-[10px] transition-colors ${styleTemp >= 0.7 ? 'text-primary-600 font-medium' : 'text-slate-400'}`}>{t.styleCreative}</span>
+                    {showTranslationSettings && (
+                        <div className="animate-fade-up grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t.targetLang}</label>
+                                <select
+                                    value={targetLang}
+                                    onChange={(e) => setTargetLang(e.target.value)}
+                                    className="focus-apple min-h-11 w-full rounded-lg border border-zinc-200/80 bg-white/70 px-3 text-sm text-zinc-800 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+                                >
+                                    {LANGUAGES.map(l => (
+                                        <option key={l} value={l}>
+                                            {t['lang' + l as keyof typeof t] || l}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t.transStyle}</label>
+                                    <span className="rounded-full bg-zinc-950/5 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{getStyleLabel(styleTemp)}</span>
+                                </div>
+                                <div className="flex min-h-11 items-center justify-between rounded-lg border border-zinc-200/70 bg-white/[0.55] px-3 dark:border-white/10 dark:bg-white/5">
+                                    <span className={`text-[11px] transition-colors ${styleTemp <= 0.3 ? 'text-sky-700 font-medium dark:text-sky-300' : 'text-zinc-400'}`}>{t.styleLiteral}</span>
+                                    <input
+                                        type="range" min="0" max="1" step="0.1"
+                                        value={styleTemp}
+                                        onChange={(e) => setStyleTemp(parseFloat(e.target.value))}
+                                        aria-label={t.transStyle}
+                                        className="mx-3 h-1 flex-1 cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-950 dark:bg-zinc-700 dark:accent-zinc-50"
+                                    />
+                                    <span className={`text-[11px] transition-colors ${styleTemp >= 0.7 ? 'text-sky-700 font-medium dark:text-sky-300' : 'text-zinc-400'}`}>{t.styleCreative}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    <Button onClick={onProcess} className="w-full py-3 text-sm shadow-lg shadow-primary-100 rounded-xl">{t.startProcess}</Button>
+                    <Button onClick={onProcess} className="mt-auto w-full">{t.startProcess}</Button>
                 </div>
             )}
 
             {(status === AppStatus.PROCESSING || isTranslating) && (
-                <div className="py-4 flex flex-col items-center gap-4">
-                    <Loader2 className="w-12 h-12 text-primary-600 animate-spin stroke-[2.5]" />
-                    <div className="text-center space-y-2">
-                        <p className="text-slate-900 text-lg">
+                <div className="flex flex-1 flex-col items-center justify-center gap-5 py-8" aria-live="polite" aria-busy="true">
+                    <Loader2 className="h-10 w-10 animate-spin text-sky-600 stroke-[2.5] dark:text-sky-300" />
+                    <div className="w-full space-y-3 text-center">
+                        <p className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
                             {progressInfo?.stageLabel || (isTranslating ? t.translating : t.engineStarting)}
                         </p>
                         {progressInfo?.detail && (
-                            <p className="text-xs text-slate-500">
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
                                 {progressInfo.detail}
                             </p>
                         )}
 
-                        <p className="text-[11px] text-primary-600 bg-primary-50 border border-primary-100 px-3 py-1 rounded-full mt-2 inline-block">
+                        <div className="mx-auto h-2 w-full max-w-xs overflow-hidden rounded-full bg-zinc-950/10 dark:bg-white/10" role="progressbar" aria-valuenow={Math.round(progressValue)} aria-valuemin={0} aria-valuemax={100}>
+                            <div
+                                className="app-progress-fill h-full w-full rounded-full bg-sky-600 dark:bg-sky-300"
+                                style={{ transform: `scaleX(${progressValue / 100})` }}
+                            />
+                        </div>
+
+                        <p className="inline-block rounded-full border border-sky-200/70 bg-sky-50/80 px-3 py-1 text-xs text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300">
                             {captionsCount > 0 ? t.capturedSegments.replace('{count}', captionsCount.toString()) : t.showAfterFinish}
                         </p>
                     </div>
@@ -152,4 +175,3 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
         </div>
     );
 };
-

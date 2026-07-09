@@ -269,3 +269,70 @@ export const isVideoFile = (file: File): boolean => {
 export const isAudioFile = (file: File): boolean => {
     return file.type.startsWith('audio/');
 };
+
+/**
+ * 检查文件是否为 MPEG-TS 格式
+ */
+export const isTsFile = (file: File): boolean => {
+    return file.name.toLowerCase().endsWith('.ts');
+};
+
+/**
+ * 将 MPEG-TS 文件转封装为 MP4（仅切换容器，不重新编码，速度快）
+ * Chromium 的 <video> 不支持 MPEG-TS 容器，需要转为 MP4 才能预览播放
+ * @param tsFile TS 格式的视频文件
+ * @param onProgress 进度回调 (0-100)
+ * @returns MP4 格式的 Blob URL
+ */
+export const remuxTsToMp4 = async (
+    tsFile: File,
+    onProgress?: (progress: number) => void
+): Promise<string> => {
+    console.log('[remuxTsToMp4] 开始转封装, 文件大小:', (tsFile.size / 1024 / 1024).toFixed(2), 'MB');
+
+    onProgress?.(5);
+    const ff = await loadFFmpeg();
+    onProgress?.(20);
+
+    const inputName = 'input.ts';
+    const outputName = 'output.mp4';
+
+    // 写入 TS 文件
+    console.log('[remuxTsToMp4] 正在加载文件到内存...');
+    await ff.writeFile(inputName, await fetchFile(tsFile));
+    onProgress?.(40);
+
+    // 注册进度监听
+    ff.on('progress', ({ progress }) => {
+        onProgress?.(40 + Math.round(progress * 50));
+    });
+
+    // 转封装：仅 copy 流，不重新编码（极快）
+    console.log('[remuxTsToMp4] 正在转封装为 MP4...');
+    await ff.exec([
+        '-i', inputName,
+        '-c', 'copy',           // 流拷贝，不重新编码
+        '-movflags', '+faststart', // 优化 MP4 用于 Web 播放
+        outputName
+    ]);
+    console.log('[remuxTsToMp4] 转封装完成');
+    onProgress?.(92);
+
+    // 读取输出文件
+    const data = await ff.readFile(outputName);
+    onProgress?.(95);
+
+    // 清理
+    await ff.deleteFile(inputName);
+    await ff.deleteFile(outputName);
+
+    // 创建 Blob URL
+    const rawData = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);
+    const blob = new Blob([new Uint8Array(rawData)], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+
+    console.log('[remuxTsToMp4] MP4 大小:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+    onProgress?.(100);
+
+    return url;
+};

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { FileVideo, Music, FileText } from 'lucide-react';
+import { FileVideo, Music, FileText, Upload } from 'lucide-react';
 import { Language, getTranslation } from '../utils/i18n';
 
 interface FileUploaderProps {
@@ -11,15 +11,20 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect, uiLang
     const t = getTranslation(uiLanguage);
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const supportTextId = 'supported-file-formats';
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
         setIsDragging(true);
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragging(false);
+        const nextTarget = e.relatedTarget as Node | null;
+        if (!nextTarget || !e.currentTarget.contains(nextTarget)) {
+            setIsDragging(false);
+        }
     };
 
     const handleDrop = async (e: React.DragEvent) => {
@@ -37,37 +42,48 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect, uiLang
     };
 
     return (
-        <div className="max-w-xl mx-auto space-y-8 py-12 text-center">
-            <div className="space-y-4">
-                <h2 className="text-4xl text-slate-900 tracking-tight">{t.mainTitle}</h2>
-                <p className="text-lg text-slate-600 ">{t.mainSubtitle}</p>
+        <section className="mx-auto flex max-w-5xl flex-col gap-4 py-5 lg:py-8">
+            <div className="mx-auto max-w-3xl space-y-2 text-center">
+                <h2 className="break-words text-2xl font-semibold leading-tight text-zinc-950 sm:text-3xl dark:text-zinc-50">{t.mainTitle}</h2>
+                <p className="text-sm leading-6 text-zinc-600 sm:text-base dark:text-zinc-300">{t.mainSubtitle}</p>
             </div>
-            <div
-                className={`group border-2 border-dashed rounded-3xl p-12 text-center transition-all cursor-pointer bg-white shadow-sm flex flex-col items-center justify-center min-h-[300px] ${isDragging
-                    ? 'border-primary-500 bg-primary-50 scale-[1.02]'
-                    : 'border-slate-300 hover:border-primary-500 hover:bg-primary-50'
+            <button
+                type="button"
+                className={`focus-apple app-panel group relative mx-auto flex min-h-[300px] w-full max-w-3xl cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed p-8 text-center transition-all duration-300 sm:p-10 ${isDragging
+                    ? 'border-sky-400 bg-sky-50/80 shadow-xl shadow-sky-500/10 scale-[1.01] dark:bg-sky-400/10'
+                    : 'border-zinc-300/80 hover:border-sky-400 hover:bg-white/90 dark:border-white/15 dark:hover:border-sky-300 dark:hover:bg-white/10'
                     }`}
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
+                aria-label={t.uploadTip}
+                aria-describedby={supportTextId}
             >
-                <div className="p-4 bg-primary-100 text-primary-600 rounded-2xl group-hover:scale-110 transition-transform mb-6 flex gap-3">
-                    <FileVideo className="w-8 h-8" />
-                    <Music className="w-8 h-8" />
-                    <FileText className="w-8 h-8" />
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg bg-zinc-950 text-white shadow-lg shadow-zinc-950/20 transition-transform duration-300 group-hover:scale-[1.03] dark:bg-zinc-50 dark:text-zinc-950">
+                    <Upload className="h-7 w-7" />
                 </div>
-                <p className="text-xl text-slate-900">{t.uploadTip}</p>
-                <p className="text-sm text-slate-400 mt-2 ">{t.supportFormat}</p>
+                <p className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">{t.uploadTip}</p>
+                <p id={supportTextId} className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{t.supportFormat}</p>
+                <div className="mt-5 flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-950/5 dark:bg-white/10">
+                        <FileVideo className="h-4 w-4" />
+                    </span>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-950/5 dark:bg-white/10">
+                        <Music className="h-4 w-4" />
+                    </span>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-950/5 dark:bg-white/10">
+                        <FileText className="h-4 w-4" />
+                    </span>
+                </div>
                 <input
                     type="file"
                     ref={fileInputRef}
                     className="hidden"
-                    accept="video/*,audio/*,.srt,.vtt"
+                    accept="video/*,audio/*,.srt,.vtt,.ts"
                     onChange={handleFileChange}
                 />
-            </div>
-        </div>
+            </button>
+        </section>
     );
 };
-

@@ -1,17 +1,16 @@
 import React from 'react';
-import { Loader2, Check, ExternalLink, Trash2, Languages, ChevronDown } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Trash2, Languages, ChevronDown, KeyRound, Sparkles } from 'lucide-react';
 import { useApiKey } from '../hooks/useApiKey';
 import { Language, getTranslation } from '../utils/i18n';
 
 interface HeaderProps {
-    onReset: () => void;
     apiKeyData: ReturnType<typeof useApiKey>;
     onApiKeySuccess?: () => void;
     uiLanguage: Language;
     setUiLanguage: (l: Language) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuccess, uiLanguage, setUiLanguage }) => {
+export const Header: React.FC<HeaderProps> = ({ apiKeyData, onApiKeySuccess, uiLanguage, setUiLanguage }) => {
     const t = getTranslation(uiLanguage);
     const {
         userApiKey,
@@ -40,22 +39,24 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
     };
 
     return (
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+        <header className="app-titlebar sticky top-0 z-40 border-b border-white/70 bg-white/[0.72] backdrop-blur-2xl dark:border-white/10 dark:bg-zinc-950/[0.72]">
+            <div className="app-titlebar-content max-w-[1440px] mx-auto h-16 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={onReset}
-                        className="text-lg text-slate-900 tracking-tight transition-all hover:scale-[1.02] active:scale-95 hover:opacity-80 flex items-center gap-2"
-                    >
-                        {t.brand}
-                    </button>
+                    <div className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-zinc-950 dark:text-zinc-50" aria-label={t.brand}>
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-950 text-white shadow-sm shadow-zinc-950/20 dark:bg-zinc-50 dark:text-zinc-950">
+                            <Sparkles className="h-4 w-4" />
+                        </span>
+                        <span className="text-sm font-semibold">{t.brand}</span>
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                     <div className="relative">
                         <button
                             onClick={() => setShowLangDropdown(!showLangDropdown)}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all text-slate-600 hover:bg-slate-50 border border-slate-200 hover:border-slate-300 active:scale-95"
+                            aria-expanded={showLangDropdown}
+                            aria-haspopup="menu"
+                            className="focus-apple flex min-h-11 items-center gap-1.5 rounded-lg border border-zinc-200/70 bg-white/60 px-3 text-xs font-medium text-zinc-700 transition-all hover:bg-white active:scale-[0.99] dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
                         >
                             <Languages className="w-3.5 h-3.5" />
                             {uiLanguage === 'zh' ? '中文' : 'English'}
@@ -65,17 +66,21 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                         {showLangDropdown && (
                             <>
                                 <div className="fixed inset-0 z-[60]" onClick={() => setShowLangDropdown(false)} />
-                                <div className="absolute right-0 top-full mt-2 w-32 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] py-1 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right overflow-hidden">
+                                <div className="app-popover animate-popover-in absolute right-0 top-full z-[70] mt-2 w-36 origin-top-right overflow-hidden rounded-lg p-1" role="menu">
                                     <button
                                         onClick={() => handleLangSelect('zh')}
-                                        className={`w-full text-left px-4 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${uiLanguage === 'zh' ? 'text-primary-600 font-medium bg-primary-50/30' : 'text-slate-600'}`}
+                                        className={`focus-apple flex min-h-10 w-full items-center justify-between rounded-md px-3 text-left text-xs transition-colors hover:bg-zinc-950/5 dark:hover:bg-white/10 ${uiLanguage === 'zh' ? 'text-sky-700 font-medium bg-sky-50/80 dark:bg-sky-400/10 dark:text-sky-300' : 'text-zinc-700 dark:text-zinc-200'}`}
+                                        role="menuitemradio"
+                                        aria-checked={uiLanguage === 'zh'}
                                     >
                                         中文
                                         {uiLanguage === 'zh' && <Check className="w-3 h-3" />}
                                     </button>
                                     <button
                                         onClick={() => handleLangSelect('en')}
-                                        className={`w-full text-left px-4 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${uiLanguage === 'en' ? 'text-primary-600 font-medium bg-primary-50/30' : 'text-slate-600'}`}
+                                        className={`focus-apple flex min-h-10 w-full items-center justify-between rounded-md px-3 text-left text-xs transition-colors hover:bg-zinc-950/5 dark:hover:bg-white/10 ${uiLanguage === 'en' ? 'text-sky-700 font-medium bg-sky-50/80 dark:bg-sky-400/10 dark:text-sky-300' : 'text-zinc-700 dark:text-zinc-200'}`}
+                                        role="menuitemradio"
+                                        aria-checked={uiLanguage === 'en'}
                                     >
                                         English
                                         {uiLanguage === 'en' && <Check className="w-3 h-3" />}
@@ -88,25 +93,29 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                     <div className="relative">
                         <button
                             onClick={showApiKeyPanel ? closePanel : openPanel}
-                            className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-medium transition-all ${userApiKey ? 'bg-transparent hover:bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-transparent hover:bg-primary-50 text-primary-700 ring-1 ring-primary-200'} hover:shadow-sm active:scale-95`}
+                            aria-expanded={showApiKeyPanel}
+                            aria-haspopup="dialog"
+                            className={`focus-apple flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-all hover:bg-white active:scale-[0.99] dark:hover:bg-white/10 ${userApiKey ? 'border-emerald-200/80 bg-emerald-50/70 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300' : 'border-sky-200/80 bg-sky-50/70 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300'}`}
                         >
+                            <KeyRound className="h-3.5 w-3.5" />
                             {t.apiKey}
                         </button>
 
                         {showApiKeyPanel && (
                             <>
                                 <div className="fixed inset-0 z-[60]" onClick={handleClosePanel} />
-                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-[70] p-4 animate-in fade-in zoom-in slide-in-from-top-2 duration-150 origin-top-right">
-                                    <h4 className="text-xs font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                <div className="app-popover animate-popover-in absolute right-0 top-full z-[70] mt-2 w-80 origin-top-right rounded-lg p-4" role="dialog" aria-modal="true" aria-labelledby="api-key-panel-title">
+                                    <h4 id="api-key-panel-title" className="text-sm font-semibold text-zinc-950 mb-3 flex items-center gap-2 dark:text-zinc-50">
+                                        <KeyRound className="h-4 w-4 text-sky-600 dark:text-sky-300" />
                                         {t.configApiKey}
                                     </h4>
-                                    <p className="text-[10px] text-slate-500 mb-3 leading-normal">
+                                    <p className="text-xs text-zinc-500 mb-3 leading-relaxed dark:text-zinc-400">
                                         {t.apiKeyTip}
                                         <a
                                             href={userApiKey ? "https://platform.openai.com/settings/organization/usage" : "https://platform.openai.com/api-keys"}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-primary-600 hover:underline ml-1 inline-flex items-center gap-0.5"
+                                            className="text-sky-700 hover:underline ml-1 inline-flex items-center gap-0.5 dark:text-sky-300"
                                         >
                                             {userApiKey ? t.viewUsage : t.getApiKey}
                                             <ExternalLink className="w-3 h-3" />
@@ -118,11 +127,11 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                             value={tempApiKey}
                                             onChange={(e) => setTempApiKey(e.target.value)}
                                             placeholder="sk-..."
-                                            className={`w-full text-xs border rounded-lg focus:ring-primary-500 p-2 bg-slate-50 ${keyError ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
+                                            className={`focus-apple w-full min-h-11 rounded-lg border px-3 text-sm outline-none transition-colors ${keyError ? 'border-red-300 bg-red-50 text-red-900 dark:bg-red-950/30 dark:text-red-100' : 'border-zinc-200 bg-white/70 text-zinc-900 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50'}`}
                                             autoFocus
                                         />
                                         {keyError && (
-                                            <p className="text-[10px] text-red-600 mt-1">{keyError}</p>
+                                            <p className="text-xs text-red-600 mt-1 dark:text-red-300">{keyError}</p>
                                         )}
                                         <div className="flex gap-2">
                                             {userApiKey ? (
@@ -135,9 +144,9 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                                             setIsConfirmingDelete(true);
                                                         }
                                                     }}
-                                                    className={`flex-1 px-3 py-1.5 border rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap ${isConfirmingDelete
+                                                    className={`focus-apple flex min-h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs transition-colors ${isConfirmingDelete
                                                         ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
-                                                        : 'border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
+                                                        : 'border-zinc-200 text-zinc-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-red-400/10'
                                                         }`}
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -146,7 +155,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                             ) : (
                                                 <button
                                                     onClick={handleClosePanel}
-                                                    className="flex-1 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition-colors"
+                                                    className="focus-apple min-h-11 flex-1 rounded-lg border border-zinc-200 px-3 text-xs text-zinc-600 transition-colors hover:bg-zinc-950/5 dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/10"
                                                 >
                                                     {t.cancel}
                                                 </button>
@@ -154,7 +163,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, apiKeyData, onApiKeySuc
                                             <button
                                                 onClick={() => saveApiKey(onApiKeySuccess)}
                                                 disabled={isValidatingKey}
-                                                className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+                                                className="focus-apple flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-zinc-950 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-white"
                                             >
                                                 {isValidatingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                                                 {t.verifyAndConfirm}

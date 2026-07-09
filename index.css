@@ -1,0 +1,274 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+  --app-focus: rgba(0, 113, 227, 0.42);
+  --app-border: rgba(24, 24, 27, 0.1);
+  --app-surface: rgba(255, 255, 255, 0.78);
+  --app-surface-strong: rgba(255, 255, 255, 0.92);
+  --app-muted-surface: rgba(24, 24, 27, 0.045);
+  --app-text: #1d1d1f;
+  --app-text-secondary: #6e6e73;
+  --app-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  --app-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  background: linear-gradient(180deg, #fbfbfd 0%, #f4f6f9 52%, #eef1f6 100%);
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-app-region: no-drag;
+}
+
+.app-titlebar {
+  -webkit-app-region: drag;
+}
+
+.app-titlebar-content {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .app-titlebar-content {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .app-titlebar-content {
+    padding-left: 5.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-titlebar-content {
+    padding-right: 2rem;
+  }
+}
+
+.app-shell {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 247, 250, 0.74)),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(48, 209, 88, 0.06));
+}
+
+.app-panel,
+.app-popover {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+.app-popover {
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.16);
+}
+
+.subtitle-toolbar {
+  container: subtitle-toolbar / inline-size;
+}
+
+.subtitle-toolbar-layout {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.subtitle-toolbar-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.subtitle-toolbar-actions {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.subtitle-toolbar-languages,
+.subtitle-toolbar-style,
+.subtitle-toolbar-translate,
+.subtitle-toolbar-export {
+  min-width: 0;
+  width: 100%;
+}
+
+@container subtitle-toolbar (min-width: 34rem) {
+  .subtitle-toolbar-actions {
+    grid-template-columns: minmax(11.25rem, 0.9fr) minmax(13.125rem, 1.1fr);
+  }
+
+  .subtitle-toolbar-translate {
+    width: auto;
+    justify-self: start;
+  }
+
+  .subtitle-toolbar-export {
+    width: auto;
+    justify-self: end;
+  }
+}
+
+@container subtitle-toolbar (min-width: 43rem) {
+  .subtitle-toolbar-actions {
+    grid-template-columns: 11.25rem 13.125rem max-content minmax(7.25rem, 1fr);
+  }
+}
+
+@container subtitle-toolbar (min-width: 68rem) {
+  .subtitle-toolbar-layout {
+    grid-template-columns: minmax(0, 1fr) 40rem;
+    gap: 1rem;
+  }
+}
+
+.focus-apple:focus-visible {
+  outline: 2px solid var(--app-focus);
+  outline-offset: 2px;
+}
+
+.app-progress-fill {
+  transform-origin: left center;
+  transition: transform 300ms var(--app-ease);
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.38) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.32);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.media-chrome video {
+  object-fit: contain;
+  background: #000;
+}
+
+.animate-popover-in {
+  animation: popover-in 180ms var(--app-ease);
+}
+
+.animate-fade-up {
+  animation: fade-up 260ms var(--app-ease);
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-panel,
+  .app-popover {
+    background: var(--app-surface-strong);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-border: rgba(244, 244, 245, 0.12);
+    --app-surface: rgba(24, 24, 27, 0.82);
+    --app-surface-strong: rgba(24, 24, 27, 0.96);
+    --app-muted-surface: rgba(255, 255, 255, 0.08);
+    --app-text: #f5f5f7;
+    --app-text-secondary: #a1a1a6;
+    --app-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
+  }
+
+  body {
+    background: linear-gradient(180deg, #09090b 0%, #111114 52%, #18181b 100%);
+  }
+
+  .app-shell {
+    background:
+      linear-gradient(180deg, rgba(9, 9, 11, 0.94), rgba(24, 24, 27, 0.9)),
+      linear-gradient(135deg, rgba(10, 132, 255, 0.1), rgba(48, 209, 88, 0.06));
+  }
+
+  .app-panel,
+  .app-popover {
+    background: var(--app-surface);
+  }
+}

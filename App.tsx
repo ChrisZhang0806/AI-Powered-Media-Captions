@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat, CaptionMode, ProgressInfo, SegmentStyle } from './types';
-import { generateCaptionsStream, translateSegments } from './services/openaiService';
 import { transcribeWithServer, checkServerHealth } from './services/serverService';
 import { parseCaptions } from './utils/captionUtils';
 import { detectLanguage } from './utils/helpers';
@@ -63,6 +62,13 @@ const App: React.FC = () => {
     // Refs
     const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const processingAbortRef = useRef<AbortController | null>(null);
+    const previewUrlRef = useRef<string | null>(null);
+
+    React.useEffect(() => () => {
+        processingAbortRef.current?.abort();
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    }, []);
 
     // Custom Hooks
     const apiKeyData = useApiKey();
@@ -74,6 +80,11 @@ const App: React.FC = () => {
     // File Processing Logic
     const processFile = async (file: File) => {
         const fileName = file.name.toLowerCase();
+
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
 
         // Check if it's a subtitle file
         if (fileName.endsWith('.srt') || fileName.endsWith('.vtt')) {
@@ -100,13 +111,27 @@ const App: React.FC = () => {
             return;
         }
 
+        // For .ts (MPEG Transport Stream) files, browser may report incorrect MIME type
+        const fileType = fileName.endsWith('.ts') && !file.type.startsWith('video/')
+            ? 'video/mp2t'
+            : file.type;
+
+        const previewAvailable = !fileName.endsWith('.ts');
+        const previewUrl = previewAvailable ? URL.createObjectURL(file) : '';
+        previewUrlRef.current = previewUrl || null;
+
         setVideoFile(file);
+        setCaptions([]);
         setVideoMeta({
-            name: file.name, size: file.size, type: file.type, url: URL.createObjectURL(file)
+            name: file.name,
+            size: file.size,
+            type: fileType,
+            url: previewUrl,
+            previewAvailable
         });
         setErrorMsg('');
         setStatus(AppStatus.IDLE);
-        setCaptions([]);
+        setProgressInfo(null);
     };
 
     // Auto-scroll to bottom of subtitle list
@@ -131,6 +156,10 @@ const App: React.FC = () => {
             return;
         }
 
+        processingAbortRef.current?.abort();
+        const controller = new AbortController();
+        processingAbortRef.current = controller;
+
         setStatus(AppStatus.PROCESSING);
         setErrorMsg('');
         setCaptions([]);
@@ -140,81 +169,29 @@ const App: React.FC = () => {
             let lastSegments: CaptionSegment[] = [];
             const userApiKey = apiKeyData.userApiKey;
 
-            console.log('[App] Checking backend server...');
             const isServerAvailable = await checkServerHealth();
-            const MAX_FRONTEND_SIZE = 25 * 1024 * 1024; // 25MB
-
-            // Deciding processing strategy:
-            // 1. Files < 25MB -> Browser (FAST, no upload overhead)
-            // 2. Files >= 25MB -> Server (STABLE, handles heavy extraction/splitting)
-            // 3. Fallback: If server is down, use browser for everything
-            const shouldUseServer = isServerAvailable && videoFile.size >= MAX_FRONTEND_SIZE;
-
-            if (shouldUseServer) {
-                console.log('[App] File >= 25MB, using remote server for high-performance processing');
-                await transcribeWithServer(
-                    videoFile,
-                    targetLang,
-                    captionMode,
-                    segmentStyle,
-                    contextPrompt,
-                    (streamedSegments) => {
-                        setCaptions(streamedSegments);
-                        lastSegments = streamedSegments;
-                        scrollToBottom();
-                    },
-                    (info) => setProgressInfo(info),
-                    userApiKey,
-                    uiLanguage
-                );
-
-                if (captionMode !== 'Original' && lastSegments.length > 0) {
-                    setIsTranslating(true);
-                    setProgressInfo({
-                        stage: 'translating',
-                        stageLabel: t.translating,
-                        progress: 95,
-                        detail: `${t.translating} ${t['lang' + targetLang as keyof typeof t] || targetLang}`
-                    });
-
-                    const translated = await translateSegments(lastSegments, targetLang, styleTemp, undefined, userApiKey, uiLanguage);
-                    if (captionMode === 'Translation') {
-                        setCaptions(translated);
-                        lastSegments = translated;
-                    } else {
-                        const bilingual = lastSegments.map((cap, i) => ({
-                            ...cap,
-                            text: `${cap.text}\n${translated[i]?.text || ''}`
-                        }));
-                        setCaptions(bilingual);
-                        lastSegments = bilingual;
-                    }
-                }
-            } else {
-                if (isServerAvailable && videoFile.size < MAX_FRONTEND_SIZE) {
-                    console.log('[App] Small file (< 25MB), bypassing server for direct browser processing');
-                } else if (!isServerAvailable) {
-                    console.log('[App] Backend not started, falling back to browser-only mode');
-                }
-
-                await generateCaptionsStream(
-                    videoFile,
-                    targetLang,
-                    captionMode,
-                    segmentStyle,
-                    (streamedSegments) => {
-                        setCaptions(streamedSegments);
-                        lastSegments = streamedSegments;
-                        scrollToBottom();
-                    },
-                    (info) => {
-                        setProgressInfo(info);
-                    },
-                    userApiKey,
-                    uiLanguage
-                );
+            if (!isServerAvailable) {
+                throw new Error(t.errorServerUnavailable);
             }
 
+            await transcribeWithServer(
+                videoFile,
+                targetLang,
+                captionMode,
+                segmentStyle,
+                contextPrompt,
+                (streamedSegments) => {
+                    setCaptions(streamedSegments);
+                    lastSegments = streamedSegments;
+                    scrollToBottom();
+                },
+                (info) => setProgressInfo(info),
+                userApiKey,
+                uiLanguage,
+                controller.signal
+            );
+
+            if (controller.signal.aborted) return;
             if (lastSegments.length > 0) {
                 const detectedLang = detectLanguage(lastSegments.map(c => c.text));
                 setSourceLang(detectedLang);
@@ -223,10 +200,14 @@ const App: React.FC = () => {
             setStatus(AppStatus.SUCCESS);
             setProgressInfo(null);
         } catch (err: any) {
+            if (controller.signal.aborted) return;
             setStatus(AppStatus.ERROR);
             setErrorMsg(err.message || t.errorProcessFailed);
             setProgressInfo(null);
         } finally {
+            if (processingAbortRef.current === controller) {
+                processingAbortRef.current = null;
+            }
             setIsTranslating(false);
         }
     };
@@ -280,12 +261,24 @@ const App: React.FC = () => {
     };
 
     const handleReset = () => {
+        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING || isTranslating;
+        if (hasWorkToLose && !window.confirm(t.confirmReset)) {
+            return;
+        }
+
         setVideoFile(null);
         setVideoMeta(null);
         setCaptions([]);
+        processingAbortRef.current?.abort();
+        processingAbortRef.current = null;
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
         setStatus(AppStatus.IDLE);
         setCaptionMode('Original');
-        if (videoMeta?.url) URL.revokeObjectURL(videoMeta.url);
+        setProgressInfo(null);
+        setErrorMsg('');
     };
 
     const handleEditSave = () => {
@@ -296,9 +289,8 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+        <div className="app-shell min-h-screen flex flex-col font-sans text-zinc-950 dark:text-zinc-100">
             <Header
-                onReset={handleReset}
                 apiKeyData={apiKeyData}
                 onApiKeySuccess={() => setErrorMsg('')}
                 uiLanguage={uiLanguage}
@@ -308,27 +300,28 @@ const App: React.FC = () => {
                 }}
             />
 
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden">
+            <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-5 overflow-visible lg:overflow-hidden">
                 {errorMsg && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700">
+                    <div className="app-panel mb-4 p-3 rounded-lg flex items-start gap-2 text-red-700 dark:text-red-300" role="alert">
                         <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs ">{errorMsg}</p>
+                        <p className="text-xs">{errorMsg}</p>
                     </div>
                 )}
 
                 {!videoFile && captions.length === 0 ? (
                     <FileUploader onFileSelect={processFile} uiLanguage={uiLanguage} />
                 ) : (
-                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-6 h-[calc(100vh-124px)]`}>
+                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-4 lg:gap-5 lg:h-[calc(100vh-112px)]`}>
                         {/* Left Panel: Media & Processing Controls */}
                         {(!(!videoFile && captions.length > 0)) && (
-                            <div className="lg:col-span-3 flex flex-col gap-4">
+                            <div className="lg:col-span-3 flex min-h-0 flex-col gap-4">
                                 <MediaPlayer
                                     videoMeta={videoMeta}
                                     isAudio={isAudio}
                                     mediaRef={mediaRef}
                                     canvasRef={canvasRef}
                                     activeCaption={activeCaption}
+                                    uiLanguage={uiLanguage}
                                 />
 
                                 <ControlsPanel
@@ -354,7 +347,7 @@ const App: React.FC = () => {
                         )}
 
                         {/* Right Panel: Subtitle List */}
-                        <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-8' : 'lg:col-span-5'}`}>
+                        <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-8' : 'lg:col-span-5'} min-h-0`}>
                             <SubtitleList
                                 isSubtitleOnly={!videoFile && captions.length > 0}
                                 captions={captions}

@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import { CaptionSegment, CaptionMode, SegmentStyle, ProgressInfo } from '../types';
-import { extractAudio, segmentAudioStream, isVideoFile } from '../utils/audioUtils';
 import { Language, getTranslation } from '../utils/i18n';
 
 const openai = new OpenAI({
@@ -85,6 +84,8 @@ export const generateCaptionsStream = async (
     uiLanguage: Language = 'en'
 ): Promise<void> => {
     const t = getTranslation(uiLanguage);
+    // Legacy browser processing stays in a lazy chunk and is never loaded by the web workflow.
+    const { extractAudio, segmentAudioStream, isVideoFile } = await import('../utils/audioUtils');
     const MAX_DIRECT_SIZE = 24 * 1024 * 1024; // 24MB (1MB buffer reserved)
     const isSmallAudioFile = file.type.startsWith('audio/') && file.size <= MAX_DIRECT_SIZE;
 

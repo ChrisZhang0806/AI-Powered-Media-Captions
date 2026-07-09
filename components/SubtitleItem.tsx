@@ -33,36 +33,37 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
     const isBilingual = textParts.length > 1;
 
     return (
-        <div className={`group flex items-start px-4 py-3 transition-colors ${isActive ? 'bg-primary-50/60 ring-1 ring-inset ring-primary-100' : 'hover:bg-slate-50/80'}`}>
+        <div className={`group grid grid-cols-1 gap-3 px-4 py-3 transition-colors sm:grid-cols-[8rem_minmax(0,1fr)_4rem] sm:items-start ${isActive ? 'bg-sky-50/80 ring-1 ring-inset ring-sky-100 dark:bg-sky-400/10 dark:ring-sky-400/20' : 'hover:bg-white/70 dark:hover:bg-white/5'}`}>
             {/* Time Column */}
-            <div className="w-32 flex-shrink-0 pt-1">
+            <div className="sm:pt-1">
                 <button
+                    type="button"
                     onClick={() => onJump(cap.startTime)}
-                    className={`flex flex-col items-start gap-1 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 hover:text-primary-500'}`}
+                    className={`focus-apple flex min-h-11 flex-row items-center gap-2 rounded-md px-2 py-1 text-left transition-colors sm:flex-col sm:items-start sm:gap-1 ${isActive ? 'text-sky-700 dark:text-sky-300' : 'text-zinc-400 hover:text-sky-700 dark:text-zinc-500 dark:hover:text-sky-300'}`}
                 >
-                    <span className="text-[10px] font-mono ">{cap.startTime}</span>
-                    <span className="text-[10px] font-mono opacity-60">{cap.endTime}</span>
+                    <span className="font-mono text-[11px]">{cap.startTime}</span>
+                    <span className="font-mono text-[11px] opacity-60">{cap.endTime}</span>
                 </button>
             </div>
 
             {/* Content Column */}
-            <div className="flex-1 px-4 min-w-0">
+            <div className="min-w-0 sm:px-4">
                 {isEditing ? (
                     <textarea
-                        className="w-full text-sm text-slate-800 bg-white border-slate-200 rounded-lg focus:ring-1 focus:ring-primary-500 p-2 min-h-[70px]"
+                        className="focus-apple min-h-[92px] w-full rounded-lg border border-zinc-200/80 bg-white/[0.85] p-3 text-sm leading-relaxed text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
                         value={editText}
                         onChange={(e) => onEditChange(e.target.value)}
                         autoFocus
                     />
                 ) : (
-                    <div className={`text-sm leading-relaxed break-words ${isActive ? 'text-primary-900' : 'text-slate-700'}`}>
+                    <div className={`break-words text-sm leading-relaxed ${isActive ? 'text-zinc-950 dark:text-zinc-50' : 'text-zinc-700 dark:text-zinc-200'}`}>
                         {isBilingual ? (
-                            <div className="flex -mx-4 h-full min-h-[40px]">
-                                <div className="flex-1 px-4 border-r border-slate-100 py-1">
+                            <div className="grid min-h-[40px] grid-cols-1 gap-3 md:grid-cols-2 md:gap-0">
+                                <div className="md:border-r md:border-zinc-200 md:pr-4 dark:md:border-white/10">
                                     {textParts[0]}
                                 </div>
-                                <div className="flex-1 px-4 py-1 text-primary-700">
-                                    {textParts[1] || <span className="text-slate-300 italic text-[11px]">{t.waitingForTranslation}</span>}
+                                <div className="text-sky-800 md:pl-4 dark:text-sky-200">
+                                    {textParts[1] || <span className="text-[11px] italic text-zinc-300 dark:text-zinc-600">{t.waitingForTranslation}</span>}
                                 </div>
                             </div>
                         ) : (
@@ -73,18 +74,22 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
             </div>
 
             {/* Action Column */}
-            <div className="w-16 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex justify-end gap-1 opacity-100 transition-opacity sm:w-16 sm:opacity-0 sm:group-hover:opacity-100">
                 {isEditing ? (
                     <button
+                        type="button"
                         onClick={onEditSave}
-                        className="p-1.5 text-green-600 hover:bg-green-100 rounded"
+                        aria-label={uiLanguage === 'zh' ? '保存字幕' : 'Save caption'}
+                        className="focus-apple flex h-11 w-11 items-center justify-center rounded-lg text-emerald-600 transition-colors hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10"
                     >
                         <Save className="w-4 h-4" />
                     </button>
                 ) : (
                     <button
+                        type="button"
                         onClick={() => onEditStart(cap.text)}
-                        className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-white rounded border border-transparent hover:border-slate-200"
+                        aria-label={uiLanguage === 'zh' ? '编辑字幕' : 'Edit caption'}
+                        className="focus-apple flex h-11 w-11 items-center justify-center rounded-lg border border-transparent text-zinc-400 transition-colors hover:border-zinc-200 hover:bg-white hover:text-sky-700 dark:hover:border-white/10 dark:hover:bg-white/10 dark:hover:text-sky-300"
                     >
                         <Edit2 className="w-4 h-4" />
                     </button>

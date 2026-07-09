@@ -20,6 +20,7 @@ export interface VideoMetadata {
   size: number;
   type: string;
   url: string; // Blob URL for preview
+  previewAvailable?: boolean;
 }
 
 export type DownloadMode = 'bilingual' | 'original' | 'translated';
@@ -29,7 +30,7 @@ export type CaptionMode = 'Original' | 'Translation' | 'Bilingual';
 export type SegmentStyle = 'compact' | 'natural' | 'detailed';
 
 export interface ProgressInfo {
-  stage: 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'translating' | 'refining';
+  stage: 'uploading' | 'queued' | 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'translating' | 'refining';
   stageLabel: string;
   progress: number; // 0-100
   detail?: string;

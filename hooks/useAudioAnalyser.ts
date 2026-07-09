@@ -1,8 +1,8 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, type RefObject } from 'react';
 
 interface UseAudioAnalyserOptions {
-    mediaRef: React.RefObject<HTMLAudioElement | HTMLVideoElement | null>;
-    canvasRef: React.RefObject<HTMLCanvasElement | null>;
+    mediaRef: RefObject<HTMLAudioElement | HTMLVideoElement | null>;
+    canvasRef: RefObject<HTMLCanvasElement | null>;
     isAudio: boolean;
 }
 
