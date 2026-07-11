@@ -36,6 +36,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "lucide-react": "^0.562.0",
+    "mp4box": "^2.4.1",
     "openai": "^6.16.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
@@ -52,7 +53,7 @@
     "vite": "^6.2.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.8.1"
   },
   "build": {
     "appId": "com.aipowered.mediacaptions",

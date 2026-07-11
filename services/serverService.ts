@@ -283,6 +283,30 @@ export const transcribeWithServer = async (
     };
 
     try {
+        const { transcribeMp4AudioFastPath } = await import('./mp4AudioService');
+        const usedAudioFastPath = await transcribeMp4AudioFastPath(
+            file,
+            targetLanguage,
+            mode,
+            segmentStyle,
+            contextPrompt,
+            onChunk,
+            reportProgress,
+            apiKey,
+            uiLanguage,
+            signal
+        );
+        if (usedAudioFastPath) return;
+
+        reportProgress({
+            stage: 'uploading',
+            stageLabel: t.uploading,
+            progress: highestProgress,
+            detail: uiLanguage === 'zh'
+                ? '当前容器或音频编码不支持音轨快速路径，改用兼容上传'
+                : 'This container or audio codec needs the compatible full-file upload path'
+        });
+
         session = await createUploadSession(file, segmentStyle, contextPrompt, targetLanguage, mode, signal, uiLanguage);
 
         subscription = subscribeToTask(session.taskId, (task) => {

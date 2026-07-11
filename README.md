@@ -11,7 +11,7 @@
 🎬 **AI-powered automatic subtitle generation and translation tool**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.8+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
@@ -37,7 +37,7 @@
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18 or higher
+- [Node.js](https://nodejs.org/) 20.8.1 or higher
 - [OpenAI API Key](https://platform.openai.com/api-keys) (for Whisper and GPT)
 
 ### Installation
@@ -81,6 +81,12 @@
 5. **Open your browser**
    
    Navigate to `http://localhost:5173`
+
+### Cloud Run large-MP4 fast path
+
+For `.mp4`, `.m4v`, and `.mov` files with mono or stereo AAC-LC audio, the browser reads the local MP4 index and uploads only independent audio segments (up to 12 MB each). `POST /api/audio-segments/transcribe` is stateless, so concurrent requests may be handled by different Cloud Run instances. Unsupported containers and codecs automatically use the compatible full-file upload path.
+
+After deploying, check `GET /health`. The active revision should return `"audioTrackSegments": true`.
 
 ## 📖 Usage
 
@@ -151,7 +157,7 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 🎬 **基于 AI 的自动字幕生成与翻译工具**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.8+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
@@ -177,7 +183,7 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 
 ### 环境要求
 
-- [Node.js](https://nodejs.org/) 18 或更高版本
+- [Node.js](https://nodejs.org/) 20.8.1 或更高版本
 - [OpenAI API Key](https://platform.openai.com/api-keys)（用于 Whisper 和 GPT）
 
 ### 安装步骤
@@ -221,6 +227,12 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 5. **打开浏览器**
    
    访问 `http://localhost:5173`
+
+### Cloud Run 大型 MP4 快速路径
+
+对于音轨为单声道或双声道 AAC-LC 的 `.mp4`、`.m4v` 和 `.mov` 文件，浏览器只读取本地 MP4 索引并上传独立音频分段（每段不超过 12 MB）。`POST /api/audio-segments/transcribe` 是无状态接口，因此并发请求可以由不同 Cloud Run 实例处理；不支持的容器或音频编码会自动使用兼容的完整文件上传路径。
+
+部署后访问 `GET /health`，当前版本应返回 `"audioTrackSegments": true`。
 
 ## 📖 使用说明
 

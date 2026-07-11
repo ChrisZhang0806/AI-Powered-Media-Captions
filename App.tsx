@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat, CaptionMode, ProgressInfo, SegmentStyle } from './types';
 import { transcribeWithServer, checkServerHealth } from './services/serverService';
+import { translateSegments } from './services/openaiService';
 import { parseCaptions } from './utils/captionUtils';
 import { detectLanguage } from './utils/helpers';
 import { useAudioAnalyser } from './hooks/useAudioAnalyser';

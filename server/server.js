@@ -31,6 +31,7 @@ const OUTPUT_DIR = path.join(__dirname, 'outputs');
 const configuredChunkSizeMb = Number(process.env.UPLOAD_CHUNK_SIZE_MB || 8);
 const CHUNK_SIZE = Math.max(1, Math.min(64, configuredChunkSizeMb)) * 1024 * 1024;
 const MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024;
+const MAX_AUDIO_SEGMENT_SIZE = 16 * 1024 * 1024;
 const MAX_CONCURRENT_MEDIA_TASKS = Math.max(1, Math.min(8, Number(process.env.MEDIA_PROCESSING_CONCURRENCY || 2)));
 const TASK_TTL_MS = 60 * 60 * 1000;
 const UPLOAD_IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
@@ -79,6 +80,28 @@ const upload = multer({
         }
     }
 });
+
+const audioSegmentUpload = multer({
+    storage,
+    limits: { fileSize: MAX_AUDIO_SEGMENT_SIZE },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype?.startsWith('audio/') || path.extname(file.originalname).toLowerCase() === '.aac') {
+            cb(null, true);
+        } else {
+            cb(new Error('音轨快速接口只接受音频分段'));
+        }
+    }
+});
+
+const uploadAudioSegment = (req, res, next) => {
+    audioSegmentUpload.single('file')(req, res, (error) => {
+        if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+            res.status(413).json({ error: '音频分段超过 16MB 限制' });
+            return;
+        }
+        next(error);
+    });
+};
 
 // 存储任务状态
 const tasks = new Map();
@@ -266,6 +289,22 @@ function extractAudio(inputPath, outputPath, onProgress) {
     });
 }
 
+/** Normalize a small uploaded audio segment to an OpenAI-supported MP3. */
+function normalizeAudioSegment(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+            .noVideo()
+            .audioCodec('libmp3lame')
+            .audioBitrate('64k')
+            .audioFrequency(16000)
+            .audioChannels(1)
+            .output(outputPath)
+            .on('end', () => resolve(outputPath))
+            .on('error', reject)
+            .run();
+    });
+}
+
 /**
  * 将音频分割成多个片段（每段最多 10 分钟）
  */
@@ -368,7 +407,7 @@ async function transcribeSegmentWithRetry(task, ...args) {
     let lastError;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        assertTaskActive(task);
+        if (task) assertTaskActive(task);
         try {
             return await transcribeSegment(...args);
         } catch (error) {
@@ -378,7 +417,7 @@ async function transcribeSegmentWithRetry(task, ...args) {
             if (!retryable || attempt === maxAttempts - 1) throw error;
 
             const delay = 1000 * (2 ** attempt);
-            console.warn(`[Task ${task.taskId}] 转录请求失败，${delay}ms 后重试 (${attempt + 2}/${maxAttempts})`);
+            console.warn(`[Task ${task?.taskId || 'audio-segment'}] 转录请求失败，${delay}ms 后重试 (${attempt + 2}/${maxAttempts})`);
             await new Promise((resolve) => setTimeout(resolve, delay));
         }
     }
@@ -585,7 +624,7 @@ async function translateCaptions(task, captions, targetLanguage, mode, userApiKe
             { role: 'user', content: JSON.stringify(captions.map((caption) => caption.text)) }
         ]
     });
-    assertTaskActive(task);
+    if (task) assertTaskActive(task);
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{"translations":[]}');
     const translations = Array.isArray(parsed.translations) ? parsed.translations : [];
     if (mode === 'Translation') {
@@ -603,7 +642,11 @@ async function translateCaptions(task, captions, targetLanguage, mode, userApiKe
  * 健康检查
  */
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        features: { audioTrackSegments: true }
+    });
 });
 
 // 托管前端静态文件
@@ -773,6 +816,71 @@ app.post('/api/uploads/:taskId/complete', (req, res) => {
 
     const { segmentStyle, contextPrompt, targetLanguage, captionMode, apiKey } = task.config;
     enqueueProcessing(task.taskId, () => processFile(task.taskId, task.filePath, task.mimeType, segmentStyle, contextPrompt, apiKey, targetLanguage, captionMode));
+});
+
+/**
+ * Stateless Cloud Run fast path. The browser sends only one AAC-LC audio
+ * segment extracted from the local MP4; this request transcodes and returns
+ * timestamped captions without storing a multi-GB video or task session.
+ */
+app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, next) => {
+    if (!req.file) return res.status(400).json({ error: '缺少音频分段' });
+
+    const requestId = uuidv4();
+    const normalizedPath = path.join(OUTPUT_DIR, `${requestId}.mp3`);
+    const startTime = Number(req.body.startTime || 0);
+    const segmentStyle = ['compact', 'natural', 'detailed'].includes(req.body.segmentStyle)
+        ? req.body.segmentStyle
+        : 'natural';
+    const contextPrompt = String(req.body.contextPrompt || '').slice(0, 4000);
+    const targetLanguage = String(req.body.targetLanguage || 'English').slice(0, 64);
+    const captionMode = ['Original', 'Translation', 'Bilingual'].includes(req.body.captionMode)
+        ? req.body.captionMode
+        : 'Original';
+    const apiKey = req.body.apiKey ? String(req.body.apiKey) : null;
+
+    if (!Number.isFinite(startTime) || startTime < 0) {
+        removeFile(req.file.path);
+        return res.status(400).json({ error: '音频分段起始时间无效' });
+    }
+
+    try {
+        await normalizeAudioSegment(req.file.path, normalizedPath);
+        const normalizedSize = fs.statSync(normalizedPath).size;
+        if (normalizedSize >= 25 * 1024 * 1024) {
+            throw new Error('压缩后的音频分段仍超过 OpenAI 25MB 限制');
+        }
+
+        const segments = await transcribeSegmentWithRetry(
+            null,
+            normalizedPath,
+            startTime,
+            segmentStyle,
+            contextPrompt,
+            apiKey
+        );
+        let captions = buildCaptions(segments);
+        if (captionMode !== 'Original' && captions.length > 0) {
+            captions = await translateCaptions(
+                null,
+                captions,
+                targetLanguage,
+                captionMode,
+                apiKey
+            );
+        }
+
+        res.json({
+            captions,
+            uploadedBytes: req.file.size,
+            normalizedBytes: normalizedSize
+        });
+    } catch (error) {
+        next(error);
+    } finally {
+        removeFile(req.file.path);
+        removeFile(normalizedPath);
+    }
 });
 
 /** 取消上传或处理任务。 */
