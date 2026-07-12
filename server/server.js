@@ -10,6 +10,25 @@ import { pipeline } from 'stream/promises';
 import { v4 as uuidv4 } from 'uuid';
 import ffmpeg from 'fluent-ffmpeg';
 import OpenAI from 'openai';
+import {
+    createWavBuffer,
+    decodeMediaToSpeechSegments,
+    parseByteRange
+} from './streamingMedia.js';
+import {
+    attachUploadRuntime,
+    notifyUploadChanged,
+    streamUploadedRange,
+    UploadManifestStore
+} from './resumableUpload.js';
+import { filterWhisperSegments, suppressRepeatedCaptions } from './transcriptionQuality.js';
+import { segmentSubtitles } from './subtitleSegmentation.js';
+import {
+    getDefaultChineseNormalizationMode,
+    normalizeChineseText,
+    normalizeWhisperSegments,
+    parseChineseNormalizationDirective
+} from './chineseNormalization.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,13 +45,14 @@ if (process.env.FFPROBE_PATH) {
 
 // 配置
 const PORT = process.env.PORT || 3001;
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const OUTPUT_DIR = path.join(__dirname, 'outputs');
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'));
+const OUTPUT_DIR = path.resolve(process.env.OUTPUT_DIR || path.join(__dirname, 'outputs'));
 const configuredChunkSizeMb = Number(process.env.UPLOAD_CHUNK_SIZE_MB || 8);
 const CHUNK_SIZE = Math.max(1, Math.min(64, configuredChunkSizeMb)) * 1024 * 1024;
 const MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024;
 const MAX_AUDIO_SEGMENT_SIZE = 16 * 1024 * 1024;
 const MAX_CONCURRENT_MEDIA_TASKS = Math.max(1, Math.min(8, Number(process.env.MEDIA_PROCESSING_CONCURRENCY || 2)));
+const MAX_STREAMING_TRANSCRIPTIONS = Math.max(1, Math.min(4, Number(process.env.STREAMING_TRANSCRIPTION_CONCURRENCY || 2)));
 const TASK_TTL_MS = 60 * 60 * 1000;
 const UPLOAD_IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const SUPPORTED_EXTENSIONS = new Set([
@@ -47,11 +67,13 @@ const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg
         fs.mkdirSync(dir, { recursive: true });
     }
 });
+const uploadManifestStore = new UploadManifestStore(UPLOAD_DIR);
 
 // 初始化 Express
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+let internalServerOrigin = process.env.INTERNAL_MEDIA_ORIGIN || `http://127.0.0.1:${PORT}`;
 
 // 初始化 OpenAI (如果环境变量没设置，允许空 Key 启动，后续请求可以使用用户提供的 Key)
 const openai = new OpenAI({
@@ -76,7 +98,7 @@ const upload = multer({
         if (allowedTypes.some(type => file.mimetype.startsWith(type)) || ext === '.ts') {
             cb(null, true);
         } else {
-            cb(new Error('只支持音视频文件'));
+            cb(new Error('不支持此文件格式。请选择音频或视频文件。'));
         }
     }
 });
@@ -88,7 +110,7 @@ const audioSegmentUpload = multer({
         if (file.mimetype?.startsWith('audio/') || path.extname(file.originalname).toLowerCase() === '.aac') {
             cb(null, true);
         } else {
-            cb(new Error('音轨快速接口只接受音频分段'));
+            cb(new Error('无法读取音频片段。'));
         }
     }
 });
@@ -96,7 +118,7 @@ const audioSegmentUpload = multer({
 const uploadAudioSegment = (req, res, next) => {
     audioSegmentUpload.single('file')(req, res, (error) => {
         if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-            res.status(413).json({ error: '音频分段超过 16MB 限制' });
+            res.status(413).json({ error: '音频片段过大，无法转写。' });
             return;
         }
         next(error);
@@ -111,32 +133,54 @@ let activeProcessingTasks = 0;
 
 class TaskCancelledError extends Error {
     constructor() {
-        super('任务已取消');
+        super('任务已取消。');
         this.name = 'TaskCancelledError';
     }
 }
 
-function serializeTask(task) {
+function serializeTaskState(task) {
     return {
         status: task.status,
         progress: task.progress,
         stage: task.stage,
-        captions: task.captions,
+        revision: task.revision || 0,
+        captionCount: task.captions.length,
         error: task.error,
         uploadedBytes: task.uploadedBytes,
         totalBytes: task.totalBytes,
+        uploadComplete: Boolean(task.uploadComplete),
+        decodedSeconds: task.decodedSeconds || 0,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt
     };
 }
 
-function broadcastTask(taskId) {
+function serializeTask(task) {
+    return { ...serializeTaskState(task), captions: task.captions };
+}
+
+function writeSse(response, event, data, id) {
+    if (response.destroyed || response.writableEnded) return;
+    if (id !== undefined) response.write(`id: ${id}\n`);
+    if (event) response.write(`event: ${event}\n`);
+    response.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function broadcastTask(taskId, captionChange = null) {
     const task = tasks.get(taskId);
     const subscribers = taskSubscribers.get(taskId);
     if (!task || !subscribers) return;
 
-    const payload = `data: ${JSON.stringify(serializeTask(task))}\n\n`;
-    subscribers.forEach((response) => response.write(payload));
+    subscribers.forEach((response) => {
+        if (captionChange) {
+            writeSse(response, 'captions', {
+                captions: captionChange.captions,
+                replace: captionChange.replace,
+                totalCount: task.captions.length
+            }, task.revision);
+        }
+        writeSse(response, 'task', serializeTaskState(task), task.revision);
+    });
 
     if (['completed', 'error', 'cancelled'].includes(task.status)) {
         subscribers.forEach((response) => response.end());
@@ -147,8 +191,33 @@ function broadcastTask(taskId) {
 function updateTask(taskId, patch) {
     const task = tasks.get(taskId);
     if (!task) return null;
-    Object.assign(task, patch, { updatedAt: new Date().toISOString() });
-    broadcastTask(taskId);
+    let captionChange = null;
+    if (Array.isArray(patch.captions)) {
+        const previous = task.captions || [];
+        const next = patch.captions;
+        const sharedPrefix = next.length >= previous.length && previous.every((caption, index) => {
+            const candidate = next[index];
+            return candidate
+                && candidate.id === caption.id
+                && candidate.startTime === caption.startTime
+                && candidate.endTime === caption.endTime
+                && candidate.text === caption.text;
+        });
+        if (!sharedPrefix) {
+            captionChange = { captions: next, replace: true };
+        } else if (next.length > previous.length) {
+            captionChange = { captions: next.slice(previous.length), replace: false };
+        }
+    }
+
+    Object.assign(task, patch, {
+        revision: (task.revision || 0) + 1,
+        updatedAt: new Date().toISOString()
+    });
+    broadcastTask(taskId, captionChange);
+    void uploadManifestStore.persist(task).catch((error) => {
+        console.warn(`[Task ${taskId}] 无法保存续传状态:`, error.message);
+    });
     return task;
 }
 
@@ -175,20 +244,35 @@ function scheduleTaskCleanup(taskId) {
     const timer = setTimeout(() => {
         const task = tasks.get(taskId);
         if (task) {
+            task.processingAbortController?.abort(new TaskCancelledError());
+            notifyUploadChanged(task);
             removeFile(task.filePath);
             removeFile(task.segmentDir);
         }
         tasks.delete(taskId);
         taskSubscribers.delete(taskId);
+        void uploadManifestStore.remove(taskId).catch(() => undefined);
     }, TASK_TTL_MS);
     timer.unref?.();
 }
 
-function createTask({ taskId = uuidv4(), filePath, fileName, mimeType, fileSize, uploadToken = uuidv4(), config = {}, status = 'uploading' }) {
+function createTask({
+    taskId = uuidv4(),
+    filePath,
+    fileName,
+    mimeType,
+    fileSize,
+    uploadToken = uuidv4(),
+    config = {},
+    status = 'uploading',
+    resumable = false,
+    uploadComplete = status !== 'uploading'
+}) {
     const now = new Date().toISOString();
     const task = {
         taskId,
         uploadToken,
+        resumable,
         filePath,
         fileName,
         mimeType,
@@ -198,6 +282,10 @@ function createTask({ taskId = uuidv4(), filePath, fileName, mimeType, fileSize,
         totalChunks: Math.ceil(fileSize / CHUNK_SIZE),
         receivedChunks: new Set(),
         activeChunks: new Set(),
+        uploadComplete,
+        processingQueued: false,
+        processingStarted: false,
+        processingAbortController: null,
         config,
         cancelled: false,
         status,
@@ -205,12 +293,91 @@ function createTask({ taskId = uuidv4(), filePath, fileName, mimeType, fileSize,
         stage: status === 'uploading' ? 'uploading' : 'queued',
         captions: [],
         error: null,
+        revision: 0,
+        decodedSeconds: 0,
         createdAt: now,
         updatedAt: now,
         segmentDir: null
     };
+    if (resumable) attachUploadRuntime(task);
     tasks.set(taskId, task);
     return task;
+}
+
+function uploadedBytesForChunks(task, chunks) {
+    let total = 0;
+    for (const chunkIndex of chunks) {
+        if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= task.totalChunks) continue;
+        const start = chunkIndex * task.chunkSize;
+        total += Math.min(task.chunkSize, task.totalBytes - start);
+    }
+    return total;
+}
+
+async function restoreUploadTasks() {
+    const manifests = await uploadManifestStore.loadAll();
+    for (const manifest of manifests) {
+        try {
+            const taskId = String(manifest.taskId || '');
+            const filePath = path.resolve(String(manifest.filePath || ''));
+            const uploadRoot = `${path.resolve(UPLOAD_DIR)}${path.sep}`;
+            const totalBytes = Number(manifest.totalBytes);
+            const stat = await fs.promises.stat(filePath);
+            if (!taskId || !filePath.startsWith(uploadRoot) || !Number.isSafeInteger(totalBytes) || stat.size !== totalBytes) {
+                throw new Error('manifest does not match its upload file');
+            }
+
+            const age = Date.now() - Date.parse(manifest.updatedAt || manifest.createdAt || 0);
+            if (!Number.isFinite(age) || age > UPLOAD_IDLE_TIMEOUT_MS) {
+                removeFile(filePath);
+                await uploadManifestStore.remove(taskId);
+                continue;
+            }
+            if (['completed', 'error', 'cancelled'].includes(manifest.status)) {
+                removeFile(filePath);
+                await uploadManifestStore.remove(taskId);
+                continue;
+            }
+
+            const uploadComplete = Boolean(manifest.uploadComplete);
+            const task = createTask({
+                taskId,
+                uploadToken: String(manifest.uploadToken || ''),
+                filePath,
+                fileName: path.basename(String(manifest.fileName || 'media')),
+                mimeType: String(manifest.mimeType || 'application/octet-stream'),
+                fileSize: totalBytes,
+                status: uploadComplete ? 'processing' : 'uploading',
+                uploadComplete,
+                resumable: true,
+                config: {
+                    segmentStyle: String(manifest.config?.segmentStyle || 'natural'),
+                    contextPrompt: String(manifest.config?.contextPrompt || '').slice(0, 4000),
+                    uiLanguage: normalizeUiLanguage(manifest.config?.uiLanguage),
+                    apiKey: null
+                }
+            });
+            task.receivedChunks = new Set(
+                (Array.isArray(manifest.receivedChunks) ? manifest.receivedChunks : [])
+                    .filter((value) => Number.isInteger(value) && value >= 0 && value < task.totalChunks)
+            );
+            task.uploadedBytes = uploadedBytesForChunks(task, task.receivedChunks);
+            task.uploadComplete = uploadComplete
+                && task.receivedChunks.size === task.totalChunks
+                && task.uploadedBytes === task.totalBytes;
+            task.status = task.uploadComplete ? 'processing' : 'uploading';
+            task.captions = Array.isArray(manifest.captions) ? manifest.captions : [];
+            task.progress = Number(manifest.progress) || (task.uploadComplete ? 20 : 0);
+            task.stage = task.uploadComplete ? 'queued' : 'uploading';
+            task.revision = Number(manifest.revision) || 0;
+            task.createdAt = manifest.createdAt || task.createdAt;
+            task.updatedAt = manifest.updatedAt || task.updatedAt;
+            console.log(`[Task ${taskId}] 已恢复上传会话，${task.receivedChunks.size}/${task.totalChunks} 个分片`);
+        } catch (error) {
+            console.warn('[Upload] 无法恢复上传会话:', error.message);
+            if (manifest?.taskId) await uploadManifestStore.remove(String(manifest.taskId)).catch(() => undefined);
+        }
+    }
 }
 
 function drainProcessingQueue() {
@@ -226,7 +393,7 @@ function drainProcessingQueue() {
                 console.error(`[Task ${job.taskId}] 队列处理错误:`, error);
                 const currentTask = tasks.get(job.taskId);
                 if (currentTask && !['completed', 'error', 'cancelled'].includes(currentTask.status)) {
-                    updateTask(job.taskId, { status: 'error', error: error.message || '处理失败' });
+                    updateTask(job.taskId, { status: 'error', error: error.message || '转写失败。请重试。' });
                     removeFile(currentTask.filePath);
                     scheduleTaskCleanup(job.taskId);
                 }
@@ -246,12 +413,14 @@ function enqueueProcessing(taskId, run) {
 const abandonedUploadSweep = setInterval(() => {
     const now = Date.now();
     tasks.forEach((task, taskId) => {
-        if (task.status !== 'uploading') return;
+        if (!task.resumable || task.uploadComplete || ['completed', 'error', 'cancelled'].includes(task.status)) return;
         if (now - Date.parse(task.updatedAt) < UPLOAD_IDLE_TIMEOUT_MS) return;
 
         task.cancelled = true;
+        task.processingAbortController?.abort(new TaskCancelledError());
+        notifyUploadChanged(task);
         task.config = {};
-        updateTask(taskId, { status: 'cancelled', error: '上传超时，任务已清理' });
+        updateTask(taskId, { status: 'cancelled', error: '上传已超时。请重新选择文件后重试。' });
         removeFile(task.filePath);
         scheduleTaskCleanup(taskId);
     });
@@ -373,11 +542,13 @@ function splitAudio(inputPath, outputDir, maxDuration = 600, onProgress, onSegme
 /**
  * 调用 Whisper API 转录，并进行智能断句优化
  */
-async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natural', userContext = '', userApiKey = null) {
+async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natural', userContext = '', userApiKey = null, uiLanguage = 'en') {
     const audioFile = fs.createReadStream(audioPath);
 
-    // 仅使用用户提供的 Context，移除原本的 Style Prompt
-    const fullPrompt = userContext || "";
+    const normalization = parseChineseNormalizationDirective(
+        userContext,
+        getDefaultChineseNormalizationMode(uiLanguage)
+    );
 
     // 如果用户提供了自己的 Key，创建一个临时的 OpenAI 实例
     const client = userApiKey ? new OpenAI({ apiKey: userApiKey }) : openai;
@@ -386,20 +557,37 @@ async function transcribeSegment(audioPath, startTimeOffset = 0, style = 'natura
         file: audioFile,
         model: 'whisper-1',
         response_format: 'verbose_json',
-        timestamp_granularities: ['segment'],
-        prompt: fullPrompt
+        timestamp_granularities: ['segment', 'word'],
+        prompt: normalization.transcriptionPrompt || undefined
     });
 
-    // 1. 调整时间戳
-    let segments = (response.segments || []).map(seg => ({
+    const normalizedSegments = normalizeWhisperSegments(response.segments || [], normalization.mode);
+    const normalizedWords = (Array.isArray(response.words) ? response.words : []).map((word) => ({
+        ...word,
+        text: normalizeChineseText(String(word?.word || word?.text || ''), normalization.mode)
+    }));
+    const filteredSegments = filterWhisperSegments(normalizedSegments, (_segment, reason) => {
+        console.warn(`[Whisper] 已过滤可疑片段 (${reason})`);
+    });
+
+    // 保留质量字段，供断句后的重复检测继续使用。
+    const segments = filteredSegments.map(seg => ({
         start: seg.start + startTimeOffset,
         end: seg.end + startTimeOffset,
-        text: seg.text.trim()
+        text: seg.text.trim(),
+        words: normalizedWords
+            .filter((word) => word.start < seg.end + 0.05 && word.end > seg.start - 0.05)
+            .map((word) => ({
+                start: word.start + startTimeOffset,
+                end: word.end + startTimeOffset,
+                text: word.text
+            })),
+        no_speech_prob: seg.no_speech_prob,
+        avg_logprob: seg.avg_logprob,
+        compression_ratio: seg.compression_ratio
     }));
 
-    // 2. 智能二次切割 (强制 42 字符上限)
-    const maxChars = 42;
-    return smartSplit(segments, maxChars);
+    return suppressRepeatedCaptions(segmentSubtitles(segments, style));
 }
 
 async function transcribeSegmentWithRetry(task, ...args) {
@@ -530,6 +718,7 @@ function smartSplit(segments, maxChars) {
             const endTime = (i === finalLines.length - 1) ? seg.end : runningStart + lineDuration;
 
             result.push({
+                ...seg,
                 start: runningStart,
                 end: endTime,
                 text: line
@@ -593,6 +782,10 @@ function isSupportedMedia(fileName, mimeType) {
     return mimeType.startsWith('video/') || mimeType.startsWith('audio/') || SUPPORTED_EXTENSIONS.has(extension);
 }
 
+function normalizeUiLanguage(value) {
+    return ['zh', 'zh-TW', 'en'].includes(value) ? value : 'en';
+}
+
 function buildCaptions(segments) {
     const sorted = [...segments].sort((a, b) => a.start - b.start);
     const uniqueSegments = [];
@@ -612,28 +805,18 @@ function buildCaptions(segments) {
     }));
 }
 
-async function translateCaptions(task, captions, targetLanguage, mode, userApiKey) {
-    if (mode === 'Original' || captions.length === 0) return captions;
-    const client = userApiKey ? new OpenAI({ apiKey: userApiKey }) : openai;
-    const response = await client.chat.completions.create({
-        model: process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini',
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-            { role: 'system', content: `Translate each subtitle into ${targetLanguage}. Return JSON exactly as {"translations":["..."]}; preserve order and do not add commentary.` },
-            { role: 'user', content: JSON.stringify(captions.map((caption) => caption.text)) }
-        ]
-    });
-    if (task) assertTaskActive(task);
-    const parsed = JSON.parse(response.choices[0]?.message?.content || '{"translations":[]}');
-    const translations = Array.isArray(parsed.translations) ? parsed.translations : [];
-    if (mode === 'Translation') {
-        return captions.map((caption, index) => ({ ...caption, text: String(translations[index] || '') }));
-    }
-    return captions.map((caption, index) => ({
-        ...caption,
-        text: `${caption.text}\n${String(translations[index] || '')}`
-    }));
+function serializeUploadSession(task, resumed = false) {
+    return {
+        taskId: task.taskId,
+        uploadToken: task.uploadToken,
+        chunkSize: task.chunkSize,
+        totalChunks: task.totalChunks,
+        receivedChunks: [...task.receivedChunks].sort((a, b) => a - b),
+        uploadedBytes: task.uploadedBytes,
+        uploadComplete: Boolean(task.uploadComplete),
+        status: task.status,
+        resumed
+    };
 }
 
 // ==================== API 路由 ====================
@@ -645,8 +828,68 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        features: { audioTrackSegments: true }
+        features: {
+            audioTrackSegments: true,
+            audioTrackCodecs: ['aac-lc', 'linear-pcm'],
+            resumableStreamingUpload: true,
+            incrementalCaptionEvents: true
+        }
     });
+});
+
+const sendInternalMediaHeaders = (req, res, task) => {
+    if (String(req.query.token || '') !== task.uploadToken) {
+        res.status(403).end();
+        return null;
+    }
+    const range = parseByteRange(req.get('Range'), task.totalBytes);
+    if (!range) {
+        res.status(416).set('Content-Range', `bytes */${task.totalBytes}`).end();
+        return null;
+    }
+
+    res.status(range.partial ? 206 : 200);
+    res.set({
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, no-store',
+        'Content-Type': task.mimeType || 'application/octet-stream',
+        'Content-Length': String(range.end - range.start + 1)
+    });
+    if (range.partial) {
+        res.set('Content-Range', `bytes ${range.start}-${range.end}/${task.totalBytes}`);
+    }
+    return range;
+};
+
+/** FFmpeg reads this private endpoint as a seekable file while chunks arrive. */
+app.head('/api/internal/media/:taskId', (req, res) => {
+    const task = tasks.get(req.params.taskId);
+    if (!task?.resumable) return res.status(404).end();
+    const range = sendInternalMediaHeaders(req, res, task);
+    if (range) res.end();
+});
+
+app.get('/api/internal/media/:taskId', async (req, res) => {
+    const task = tasks.get(req.params.taskId);
+    if (!task?.resumable) return res.status(404).end();
+    const range = sendInternalMediaHeaders(req, res, task);
+    if (!range) return;
+
+    const controller = new AbortController();
+    res.on('close', () => {
+        if (!res.writableEnded) controller.abort(new TaskCancelledError());
+    });
+    res.flushHeaders?.();
+
+    try {
+        await streamUploadedRange(task, range.start, range.end, res, controller.signal);
+        if (!res.writableEnded) res.end();
+    } catch (error) {
+        if (!controller.signal.aborted) {
+            console.warn(`[Task ${task.taskId}] 媒体 Range 读取中断:`, error.message);
+        }
+        if (!res.writableEnded) res.destroy();
+    }
 });
 
 // 托管前端静态文件
@@ -667,19 +910,58 @@ app.post('/api/uploads', async (req, res, next) => {
             fileSize,
             mimeType = 'application/octet-stream',
             segmentStyle = 'natural',
-            contextPrompt = ''
+            contextPrompt = '',
+            uiLanguage = 'en',
+            apiKey = null,
+            resumeTaskId = null,
+            uploadToken = null
         } = req.body || {};
 
         const safeFileName = path.basename(String(fileName || '')).slice(0, 255);
         const normalizedSize = Number(fileSize);
         if (!safeFileName || !Number.isSafeInteger(normalizedSize) || normalizedSize <= 0) {
-            return res.status(400).json({ error: '文件信息无效' });
+            return res.status(400).json({ error: '无法读取文件信息。请重新选择文件。' });
         }
         if (normalizedSize > MAX_FILE_SIZE) {
-            return res.status(413).json({ error: '文件太大，超过了 20GB 的限制' });
+            return res.status(413).json({ error: '文件超过 20 GB，无法上传。' });
         }
         if (!isSupportedMedia(safeFileName, String(mimeType))) {
-            return res.status(415).json({ error: '只支持音视频文件' });
+            return res.status(415).json({ error: '不支持此文件格式。请选择音频或视频文件。' });
+        }
+
+        if (resumeTaskId) {
+            const existingTask = tasks.get(String(resumeTaskId));
+            if (!existingTask || !existingTask.resumable) {
+                return res.status(404).json({ error: '续传会话已失效，请重新开始上传。' });
+            }
+            if (String(uploadToken || '') !== existingTask.uploadToken) {
+                return res.status(403).json({ error: '续传会话验证失败，请重新开始上传。' });
+            }
+            if (
+                existingTask.status === 'completed'
+                && existingTask.fileName === safeFileName
+                && existingTask.totalBytes === normalizedSize
+            ) {
+                return res.json(serializeUploadSession(existingTask, true));
+            }
+            if (
+                existingTask.fileName !== safeFileName
+                || existingTask.totalBytes !== normalizedSize
+                || ['error', 'cancelled'].includes(existingTask.status)
+            ) {
+                return res.status(409).json({ error: '续传文件与原上传任务不一致，请重新开始上传。' });
+            }
+
+            existingTask.config = {
+                segmentStyle: String(segmentStyle).slice(0, 32),
+                contextPrompt: String(contextPrompt).slice(0, 4000),
+                uiLanguage: normalizeUiLanguage(uiLanguage),
+                apiKey: apiKey ? String(apiKey) : null
+            };
+            existingTask.updatedAt = new Date().toISOString();
+            await uploadManifestStore.persist(existingTask);
+            if (existingTask.receivedChunks.has(0)) ensureStreamingProcessing(existingTask);
+            return res.json(serializeUploadSession(existingTask, true));
         }
 
         const taskId = uuidv4();
@@ -698,24 +980,18 @@ app.post('/api/uploads', async (req, res, next) => {
             fileName: safeFileName,
             mimeType: String(mimeType),
             fileSize: normalizedSize,
+            resumable: true,
             config: {
                 segmentStyle: String(segmentStyle).slice(0, 32),
                 contextPrompt: String(contextPrompt).slice(0, 4000),
-                targetLanguage: String(req.body.targetLanguage || 'English').slice(0, 64),
-                captionMode: ['Original', 'Translation', 'Bilingual'].includes(req.body.captionMode)
-                    ? req.body.captionMode
-                    : 'Original',
-                apiKey: null
+                uiLanguage: normalizeUiLanguage(uiLanguage),
+                apiKey: apiKey ? String(apiKey) : null
             }
         });
 
         console.log(`[Task ${taskId}] 创建上传任务: ${safeFileName}, ${normalizedSize} bytes`);
-        res.status(201).json({
-            taskId,
-            uploadToken: task.uploadToken,
-            chunkSize: task.chunkSize,
-            totalChunks: task.totalChunks
-        });
+        await uploadManifestStore.persist(task);
+        res.status(201).json(serializeUploadSession(task));
     } catch (error) {
         next(error);
     }
@@ -726,23 +1002,23 @@ app.post('/api/uploads', async (req, res, next) => {
  */
 app.put('/api/uploads/:taskId/chunks/:chunkIndex', async (req, res) => {
     const task = tasks.get(req.params.taskId);
-    if (!task) return res.status(404).json({ error: '任务不存在' });
+    if (!task) return res.status(404).json({ error: '任务已失效。请重新开始。' });
     if (req.get('X-Upload-Token') !== task.uploadToken) {
-        return res.status(403).json({ error: '上传凭证无效' });
+        return res.status(403).json({ error: '上传会话已失效。请重新开始。' });
     }
-    if (task.status !== 'uploading') {
-        return res.status(409).json({ error: '任务已结束上传阶段' });
+    if (task.uploadComplete || ['completed', 'error', 'cancelled'].includes(task.status)) {
+        return res.status(409).json({ error: '当前任务不再接受上传。' });
     }
 
     const chunkIndex = Number(req.params.chunkIndex);
     if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= task.totalChunks) {
-        return res.status(400).json({ error: '分片序号无效' });
+        return res.status(400).json({ error: '上传数据无效。请重试。' });
     }
     if (task.receivedChunks.has(chunkIndex)) {
         return res.json({ received: true, chunkIndex, uploadedBytes: task.uploadedBytes });
     }
     if (task.activeChunks.has(chunkIndex)) {
-        return res.status(409).json({ error: '该分片正在上传' });
+        return res.status(409).json({ error: '部分数据正在重复上传，请稍后重试。' });
     }
 
     const start = chunkIndex * task.chunkSize;
@@ -750,7 +1026,7 @@ app.put('/api/uploads/:taskId/chunks/:chunkIndex', async (req, res) => {
     const expectedRange = `bytes ${start}-${start + expectedSize - 1}/${task.totalBytes}`;
     const contentLength = Number(req.get('Content-Length'));
     if (req.get('Content-Range') !== expectedRange || contentLength !== expectedSize) {
-        return res.status(400).json({ error: '分片范围或大小不正确' });
+        return res.status(400).json({ error: '上传数据不完整。请重试。' });
     }
 
     task.activeChunks.add(chunkIndex);
@@ -773,58 +1049,74 @@ app.put('/api/uploads/:taskId/chunks/:chunkIndex', async (req, res) => {
             fs.createWriteStream(task.filePath, { flags: 'r+', start })
         );
         if (receivedBytes !== expectedSize) {
-            throw new Error('分片数据不完整');
+            throw new Error('上传数据不完整。请重试。');
         }
 
         task.receivedChunks.add(chunkIndex);
         task.uploadedBytes += expectedSize;
+        notifyUploadChanged(task);
+        const uploadRatio = task.uploadedBytes / task.totalBytes;
         updateTask(task.taskId, {
-            progress: Math.min(20, Math.round((task.uploadedBytes / task.totalBytes) * 20))
+            progress: task.processingQueued || task.processingStarted
+                ? Math.max(task.progress, Math.min(80, 20 + Math.round(uploadRatio * 60)))
+                : Math.min(20, Math.round(uploadRatio * 20))
         });
+        await uploadManifestStore.persist(task);
+        if (task.receivedChunks.has(0)) ensureStreamingProcessing(task);
         res.json({ received: true, chunkIndex, uploadedBytes: task.uploadedBytes });
     } catch (error) {
-        if (!res.headersSent) res.status(400).json({ error: error.message || '分片上传失败' });
+        if (!res.headersSent) res.status(400).json({ error: error.message || '文件上传失败。请检查网络后重试。' });
     } finally {
         task.activeChunks.delete(chunkIndex);
     }
 });
 
-/** 上传完整后进入服务端媒体处理。 */
-app.post('/api/uploads/:taskId/complete', (req, res) => {
+/** 标记上传完整；流式媒体处理通常已经在首个分片到达后启动。 */
+app.post('/api/uploads/:taskId/complete', async (req, res) => {
     const task = tasks.get(req.params.taskId);
-    if (!task) return res.status(404).json({ error: '任务不存在' });
+    if (!task) return res.status(404).json({ error: '任务已失效。请重新开始。' });
     if (req.get('X-Upload-Token') !== task.uploadToken) {
-        return res.status(403).json({ error: '上传凭证无效' });
+        return res.status(403).json({ error: '上传会话已失效。请重新开始。' });
     }
-    if (task.status === 'processing' || task.status === 'completed') {
+    if (task.status === 'completed') {
         return res.status(202).json({ taskId: task.taskId, status: task.status });
     }
-    if (task.status !== 'uploading') {
-        return res.status(409).json({ error: task.error || '任务无法开始处理' });
+    if (['error', 'cancelled'].includes(task.status)) {
+        return res.status(409).json({ error: task.error || '无法开始转写。请重试。' });
+    }
+    if (task.uploadComplete) {
+        if (req.body?.apiKey) task.config.apiKey = String(req.body.apiKey);
+        ensureStreamingProcessing(task);
+        return res.status(202).json({ taskId: task.taskId, status: task.status });
     }
     if (task.receivedChunks.size !== task.totalChunks || task.uploadedBytes !== task.totalBytes) {
         return res.status(409).json({
-            error: '文件尚未上传完整',
+            error: '文件上传未完成。请重试。',
             receivedChunks: task.receivedChunks.size,
             totalChunks: task.totalChunks
         });
     }
 
     task.config.apiKey = req.body?.apiKey ? String(req.body.apiKey) : null;
-    updateTask(task.taskId, { status: 'processing', stage: 'queued', progress: 20 });
+    task.uploadComplete = true;
+    notifyUploadChanged(task);
+    updateTask(task.taskId, {
+        status: 'processing',
+        stage: task.processingStarted ? 'transcribing' : 'queued',
+        progress: Math.max(task.progress, 82)
+    });
+    await uploadManifestStore.persist(task);
+    ensureStreamingProcessing(task);
     res.status(202).json({ taskId: task.taskId, status: 'processing' });
-
-    const { segmentStyle, contextPrompt, targetLanguage, captionMode, apiKey } = task.config;
-    enqueueProcessing(task.taskId, () => processFile(task.taskId, task.filePath, task.mimeType, segmentStyle, contextPrompt, apiKey, targetLanguage, captionMode));
 });
 
 /**
- * Stateless Cloud Run fast path. The browser sends only one AAC-LC audio
+ * Stateless Cloud Run fast path. The browser sends one AAC-LC or Linear PCM
  * segment extracted from the local MP4; this request transcodes and returns
  * timestamped captions without storing a multi-GB video or task session.
  */
 app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, next) => {
-    if (!req.file) return res.status(400).json({ error: '缺少音频分段' });
+    if (!req.file) return res.status(400).json({ error: '无法读取音频片段。' });
 
     const requestId = uuidv4();
     const normalizedPath = path.join(OUTPUT_DIR, `${requestId}.mp3`);
@@ -833,22 +1125,19 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
         ? req.body.segmentStyle
         : 'natural';
     const contextPrompt = String(req.body.contextPrompt || '').slice(0, 4000);
-    const targetLanguage = String(req.body.targetLanguage || 'English').slice(0, 64);
-    const captionMode = ['Original', 'Translation', 'Bilingual'].includes(req.body.captionMode)
-        ? req.body.captionMode
-        : 'Original';
     const apiKey = req.body.apiKey ? String(req.body.apiKey) : null;
+    const uiLanguage = normalizeUiLanguage(req.body.uiLanguage);
 
     if (!Number.isFinite(startTime) || startTime < 0) {
         removeFile(req.file.path);
-        return res.status(400).json({ error: '音频分段起始时间无效' });
+        return res.status(400).json({ error: '音频片段信息无效。' });
     }
 
     try {
         await normalizeAudioSegment(req.file.path, normalizedPath);
         const normalizedSize = fs.statSync(normalizedPath).size;
         if (normalizedSize >= 25 * 1024 * 1024) {
-            throw new Error('压缩后的音频分段仍超过 OpenAI 25MB 限制');
+            throw new Error('音频片段过大，无法转写。');
         }
 
         const segments = await transcribeSegmentWithRetry(
@@ -857,18 +1146,10 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
             startTime,
             segmentStyle,
             contextPrompt,
-            apiKey
+            apiKey,
+            uiLanguage
         );
-        let captions = buildCaptions(segments);
-        if (captionMode !== 'Original' && captions.length > 0) {
-            captions = await translateCaptions(
-                null,
-                captions,
-                targetLanguage,
-                captionMode,
-                apiKey
-            );
-        }
+        const captions = buildCaptions(segments);
 
         res.json({
             captions,
@@ -886,19 +1167,21 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
 /** 取消上传或处理任务。 */
 app.post('/api/task/:taskId/cancel', (req, res) => {
     const task = tasks.get(req.params.taskId);
-    if (!task) return res.status(404).json({ error: '任务不存在' });
+    if (!task) return res.status(404).json({ error: '任务已失效。请重新开始。' });
     if (req.get('X-Upload-Token') !== task.uploadToken) {
-        return res.status(403).json({ error: '上传凭证无效' });
+        return res.status(403).json({ error: '上传会话已失效。请重新开始。' });
     }
 
     task.cancelled = true;
+    task.processingAbortController?.abort(new TaskCancelledError());
+    notifyUploadChanged(task);
     task.config = {};
     updateTask(task.taskId, {
         status: 'cancelled',
         stage: task.stage,
-        error: '任务已取消'
+        error: '任务已取消。'
     });
-    if (task.stage === 'uploading' || task.stage === 'queued') removeFile(task.filePath);
+    if (!task.processingStarted || task.stage === 'queued') removeFile(task.filePath);
     scheduleTaskCleanup(task.taskId);
     res.json({ taskId: task.taskId, status: 'cancelled' });
 });
@@ -910,7 +1193,7 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     const taskId = uuidv4();
 
     if (!req.file) {
-        return res.status(400).json({ error: '请上传文件' });
+        return res.status(400).json({ error: '请选择要转写的文件。' });
     }
 
     console.log(`[Task ${taskId}] 开始处理: ${req.file.originalname}`);
@@ -925,21 +1208,199 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
         config: {
             segmentStyle: req.body.segmentStyle || 'natural',
             contextPrompt: req.body.contextPrompt || '',
+            uiLanguage: normalizeUiLanguage(req.body.uiLanguage),
             apiKey: req.body.apiKey || null
         }
     });
 
     // 立即返回任务 ID
-    res.json({ taskId, message: '任务已开始' });
+    res.json({ taskId, message: '转写任务已创建' });
 
     // 后台处理
-    enqueueProcessing(taskId, () => processFile(taskId, req.file.path, req.file.mimetype, req.body.segmentStyle || 'natural', req.body.contextPrompt || '', req.body.apiKey || null));
+    enqueueProcessing(taskId, () => processFile(taskId, req.file.path, req.file.mimetype, req.body.segmentStyle || 'natural', req.body.contextPrompt || '', req.body.apiKey || null, normalizeUiLanguage(req.body.uiLanguage)));
 });
+
+function ensureStreamingProcessing(task) {
+    if (
+        !task?.resumable
+        || task.processingQueued
+        || task.processingStarted
+        || task.cancelled
+        || ['completed', 'error', 'cancelled'].includes(task.status)
+        || (!task.receivedChunks.has(0) && !task.uploadComplete)
+    ) return;
+    if (!task.config?.apiKey && !process.env.OPENAI_API_KEY) return;
+
+    task.processingQueued = true;
+    updateTask(task.taskId, {
+        status: 'processing',
+        stage: 'queued',
+        progress: Math.max(task.progress, 20)
+    });
+    enqueueProcessing(task.taskId, () => processStreamingUpload(task.taskId));
+}
+
+async function processStreamingUpload(taskId) {
+    const task = tasks.get(taskId);
+    if (!task) return;
+
+    const controller = new AbortController();
+    task.processingQueued = false;
+    task.processingStarted = true;
+    task.processingAbortController = controller;
+    const segmentDir = path.join(OUTPUT_DIR, `${taskId}-stream`);
+    task.segmentDir = segmentDir;
+    fs.mkdirSync(segmentDir, { recursive: true });
+
+    const segmentTarget = Math.max(20, Math.min(90, Number(process.env.STREAMING_SEGMENT_SECONDS || 35)));
+    const segmentMaximum = Math.max(segmentTarget + 5, Math.min(120, Number(process.env.STREAMING_SEGMENT_MAX_SECONDS || 50)));
+    const silenceThreshold = Math.max(50, Math.min(4000, Number(process.env.STREAMING_SILENCE_THRESHOLD || 160)));
+    const inputUrl = `${internalServerOrigin}/api/internal/media/${encodeURIComponent(taskId)}?token=${encodeURIComponent(task.uploadToken)}`;
+    const { segmentStyle, contextPrompt, uiLanguage, apiKey } = task.config;
+    const transcriptionJobs = [];
+    const activeTranscriptions = new Set();
+    const completedByIndex = new Map();
+    let nextSegmentIndex = 0;
+    let nextCommitIndex = 0;
+    let speechSegmentCount = 0;
+    let allSegments = [];
+
+    const waitForTranscriptionSlot = async () => {
+        while (activeTranscriptions.size >= MAX_STREAMING_TRANSCRIPTIONS) {
+            const result = await Promise.race(activeTranscriptions);
+            if (!result.ok) throw result.error;
+        }
+    };
+
+    const commitCompletedSegments = () => {
+        while (completedByIndex.has(nextCommitIndex)) {
+            const result = completedByIndex.get(nextCommitIndex);
+            completedByIndex.delete(nextCommitIndex);
+            nextCommitIndex++;
+            allSegments.push(...result);
+            allSegments.sort((a, b) => a.start - b.start);
+            const captions = buildCaptions(suppressRepeatedCaptions(allSegments));
+            const uploadRatio = task.totalBytes > 0 ? task.uploadedBytes / task.totalBytes : 0;
+            const progress = Math.min(95, Math.max(task.progress, 24 + Math.round(uploadRatio * 58)));
+            updateTask(taskId, {
+                status: 'processing',
+                stage: 'transcribing',
+                progress,
+                captions
+            });
+        }
+    };
+
+    const scheduleTranscription = async (segment) => {
+        assertTaskActive(task);
+        if (!segment.hasSpeech || segment.pcm.length === 0) return;
+        await waitForTranscriptionSlot();
+        assertTaskActive(task);
+
+        const segmentIndex = nextSegmentIndex++;
+        speechSegmentCount++;
+        const segmentPath = path.join(segmentDir, `segment_${String(segmentIndex).padStart(6, '0')}.wav`);
+        await fs.promises.writeFile(segmentPath, createWavBuffer(segment.pcm));
+
+        const transcription = (async () => {
+            try {
+                const result = await transcribeSegmentWithRetry(
+                    task,
+                    segmentPath,
+                    segment.startTime,
+                    segmentStyle,
+                    contextPrompt,
+                    apiKey,
+                    uiLanguage
+                );
+                assertTaskActive(task);
+                completedByIndex.set(segmentIndex, result);
+                commitCompletedSegments();
+            } finally {
+                removeFile(segmentPath);
+            }
+        })();
+        void transcription.catch(() => undefined);
+        transcriptionJobs.push(transcription);
+
+        const completion = transcription.then(
+            () => ({ ok: true }),
+            (error) => ({ ok: false, error })
+        );
+        activeTranscriptions.add(completion);
+        void completion.finally(() => activeTranscriptions.delete(completion));
+    };
+
+    try {
+        updateTask(taskId, {
+            status: 'processing',
+            stage: 'streaming',
+            progress: Math.max(task.progress, 21),
+            captions: []
+        });
+
+        await decodeMediaToSpeechSegments({
+            inputUrl,
+            signal: controller.signal,
+            segmentOptions: {
+                targetDuration: segmentTarget,
+                maxDuration: segmentMaximum,
+                silenceThreshold
+            },
+            onSegment: scheduleTranscription,
+            onDecodedTime: (decodedSeconds) => {
+                task.decodedSeconds = Math.max(task.decodedSeconds || 0, decodedSeconds);
+            }
+        });
+
+        const transcriptionResults = await Promise.allSettled(transcriptionJobs);
+        const failed = transcriptionResults.find((result) => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        assertTaskActive(task);
+        commitCompletedSegments();
+        if (speechSegmentCount === 0) {
+            throw new Error('未检测到可转写的音频。请检查文件是否包含声音。');
+        }
+
+        task.uploadComplete = true;
+        const finalCaptions = buildCaptions(suppressRepeatedCaptions(allSegments));
+        updateTask(taskId, {
+            captions: finalCaptions,
+            status: 'completed',
+            progress: 100,
+            stage: 'done'
+        });
+        console.log(`[Task ${taskId}] 流式转写完成，共 ${finalCaptions.length} 条字幕`);
+    } catch (error) {
+        controller.abort(error);
+        await Promise.allSettled(transcriptionJobs);
+        if (error instanceof TaskCancelledError || error?.name === 'AbortError' || task.cancelled) {
+            if (task.status !== 'cancelled') {
+                updateTask(taskId, { status: 'cancelled', error: '任务已取消。' });
+            }
+        } else {
+            console.error(`[Task ${taskId}] 流式处理错误:`, error);
+            updateTask(taskId, {
+                status: 'error',
+                error: error.message || '转写失败。请重试。'
+            });
+        }
+    } finally {
+        controller.abort(new TaskCancelledError());
+        task.processingAbortController = null;
+        task.config.apiKey = null;
+        notifyUploadChanged(task);
+        removeFile(task.segmentDir);
+        task.segmentDir = null;
+        removeFile(task.filePath);
+        scheduleTaskCleanup(taskId);
+    }
+}
 
 /**
  * 后台处理文件
  */
-async function processFile(taskId, filePath, mimeType, segmentStyle, contextPrompt, userApiKey, targetLanguage = 'English', captionMode = 'Original') {
+async function processFile(taskId, filePath, mimeType, segmentStyle, contextPrompt, userApiKey, uiLanguage = 'en') {
     const task = tasks.get(taskId);
     const ext = path.extname(filePath).toLowerCase();
     const isAudio = mimeType.startsWith('audio/') || AUDIO_EXTENSIONS.has(ext);
@@ -1007,7 +1468,8 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
                             segment.startTime,
                             segmentStyle,
                             contextPrompt,
-                            userApiKey
+                            userApiKey,
+                            uiLanguage
                         );
                         assertTaskActive(task);
                         allSegments.push(...result);
@@ -1053,14 +1515,14 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
             const failedTranscription = transcriptionResults.find((result) => result.status === 'rejected');
             if (failedTranscription?.status === 'rejected') throw failedTranscription.reason;
             assertTaskActive(task);
-            if (audioSegments.length === 0) throw new Error('没有检测到可转录的音频内容');
+            if (audioSegments.length === 0) throw new Error('未检测到可转写的音频。请检查文件是否包含声音。');
 
             removeFile(segmentDir);
             task.segmentDir = null;
         } else {
             // 直接转录
             updateTask(taskId, { stage: 'transcribing', progress: 50 });
-            allSegments = await transcribeSegmentWithRetry(task, audioPath, 0, segmentStyle, contextPrompt, userApiKey);
+            allSegments = await transcribeSegmentWithRetry(task, audioPath, 0, segmentStyle, contextPrompt, userApiKey, uiLanguage);
             assertTaskActive(task);
         updateTask(taskId, {
             stage: 'transcribing',
@@ -1070,12 +1532,7 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
         }
 
         assertTaskActive(task);
-        let finalCaptions = buildCaptions(allSegments);
-        if (captionMode !== 'Original' && finalCaptions.length > 0) {
-            updateTask(taskId, { stage: 'translating', progress: 96 });
-            finalCaptions = await translateCaptions(task, finalCaptions, targetLanguage, captionMode, userApiKey);
-            updateTask(taskId, { stage: 'translating', progress: 99, captions: finalCaptions });
-        }
+        const finalCaptions = buildCaptions(allSegments);
         updateTask(taskId, {
             captions: finalCaptions,
             status: 'completed',
@@ -1088,11 +1545,11 @@ async function processFile(taskId, filePath, mimeType, segmentStyle, contextProm
     } catch (error) {
         if (error instanceof TaskCancelledError || task?.cancelled) {
             if (task && task.status !== 'cancelled') {
-                updateTask(taskId, { status: 'cancelled', error: '任务已取消' });
+                updateTask(taskId, { status: 'cancelled', error: '任务已取消。' });
             }
         } else {
             console.error(`[Task ${taskId}] 错误:`, error);
-            updateTask(taskId, { status: 'error', error: error.message || '处理失败' });
+            updateTask(taskId, { status: 'error', error: error.message || '转写失败。请重试。' });
         }
     } finally {
         removeFile(task?.segmentDir);
@@ -1110,7 +1567,7 @@ app.get('/api/task/:taskId', (req, res) => {
     const task = tasks.get(req.params.taskId);
 
     if (!task) {
-        return res.status(404).json({ error: '任务不存在' });
+        return res.status(404).json({ error: '任务已失效。请重新开始。' });
     }
 
     res.json(serializeTask(task));
@@ -1122,7 +1579,7 @@ app.get('/api/task/:taskId', (req, res) => {
 app.get('/api/task/:taskId/stream', (req, res) => {
     const taskId = req.params.taskId;
     const task = tasks.get(taskId);
-    if (!task) return res.status(404).json({ error: '任务不存在' });
+    if (!task) return res.status(404).json({ error: '任务已失效。请重新开始。' });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1130,7 +1587,7 @@ app.get('/api/task/:taskId/stream', (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
     res.write('retry: 2000\n\n');
-    res.write(`data: ${JSON.stringify(serializeTask(task))}\n\n`);
+    writeSse(res, 'snapshot', serializeTask(task), task.revision);
 
     if (['completed', 'error', 'cancelled'].includes(task.status)) {
         res.end();
@@ -1160,19 +1617,25 @@ if (fs.existsSync(distPath)) {
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ error: '文件太大，超过了 20GB 的限制' });
+            return res.status(400).json({ error: '文件超过 20 GB，无法上传。' });
         }
-        return res.status(400).json({ error: `上传错误: ${err.message}` });
+        return res.status(400).json({ error: '文件上传失败。请检查网络后重试。' });
     }
     if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: '转写服务出现问题。请稍后重试。' });
     }
     next();
 });
 
 // 启动服务器
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Caption Server 运行在端口: ${PORT}`);
+await restoreUploadTasks();
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
+    const address = httpServer.address();
+    const actualPort = typeof address === 'object' && address ? address.port : PORT;
+    if (!process.env.INTERNAL_MEDIA_ORIGIN) {
+        internalServerOrigin = `http://127.0.0.1:${actualPort}`;
+    }
+    console.log(`🚀 Caption Server 运行在端口: ${actualPort}`);
     console.log(`🔗 外部访问请确保监听 0.0.0.0`);
     console.log(`📁 上传目录: ${UPLOAD_DIR}`);
     console.log(`📁 输出目录: ${OUTPUT_DIR}`);

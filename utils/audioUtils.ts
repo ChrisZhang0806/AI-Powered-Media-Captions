@@ -179,16 +179,16 @@ export const segmentAudioStream = async (
     overlapSec: number = 2
 ): Promise<void> => {
     // 1. 加载 FFmpeg
-    onProgress?.({ stageLabel: '加载音频处理引擎...', progress: 10 });
+    onProgress?.({ stageLabel: '正在准备音频', progress: 10 });
     const ff = await loadFFmpeg((p) => {
-        onProgress?.({ stageLabel: '初始化引擎核心...', progress: 10 + Math.round(p * 0.4) });
+        onProgress?.({ stageLabel: '正在准备音频', progress: 10 + Math.round(p * 0.4) });
     });
 
-    onProgress?.({ stageLabel: '正在读取视频文件...', progress: 60 });
+    onProgress?.({ stageLabel: '正在读取媒体', progress: 60 });
     const inputName = 'input_file';
     // 写入文件（这里是最大的瓶颈）
     await ff.writeFile(inputName, await fetchFile(audioBlob));
-    onProgress?.({ stageLabel: '文件加载完成，准备分割...', progress: 90 });
+    onProgress?.({ stageLabel: '正在准备音频', progress: 90 });
 
     let currentStart = 0;
     let segmentIndex = 0;

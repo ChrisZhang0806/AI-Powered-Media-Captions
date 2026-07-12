@@ -1,5 +1,5 @@
 {
-  "name": "媒体转字幕工具",
-  "description": "AI 驱动的音视频字幕生成器。上传视频或音频文件，使用 Gemini 3 Pro 自动生成、编辑并导出 SRT/VTT 字幕，支持多语言翻译。",
+  "name": "AI 视频字幕",
+  "description": "为音频和视频生成、编辑并导出 SRT、VTT 或纯文本字幕。",
   "requestFramePermissions": []
 }

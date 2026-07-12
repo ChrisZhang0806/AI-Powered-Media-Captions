@@ -123,7 +123,7 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/) speci
 ### Examples
 
 ```
-feat(translation): add support for Korean language
+feat(transcription): improve Korean speech recognition
 fix(player): resolve audio sync issue with long videos
 docs(readme): update installation instructions
 ```

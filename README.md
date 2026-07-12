@@ -8,7 +8,7 @@
 <a name="english"></a>
 # AI Powered Media Captions
 
-🎬 **AI-powered automatic subtitle generation and translation tool**
+🎬 **AI-powered automatic subtitle generation and editing tool**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![Node.js](https://img.shields.io/badge/Node.js-20.8+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -18,10 +18,9 @@
 ## 🌟 Features
 
 - 🎙️ **Speech Recognition** - Powered by OpenAI Whisper for accurate transcription
-- 🌐 **Multi-language Translation** - Translate subtitles to 10+ languages using GPT
 - 📹 **Video & Audio Support** - Upload video/audio files or subtitle files directly
 - ⚡ **Real-time Preview** - Synchronized media playback with subtitle highlighting
-- 📥 **Export Options** - Download as SRT or VTT format (bilingual or single language)
+- 📥 **Export Options** - Download as SRT, VTT, or plain text
 - 🎨 **Modern UI** - Beautiful, responsive interface with dark mode support
 
 ## 📦 Download Desktop App
@@ -38,7 +37,8 @@
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 20.8.1 or higher
-- [OpenAI API Key](https://platform.openai.com/api-keys) (for Whisper and GPT)
+- [FFmpeg](https://ffmpeg.org/) available to the backend process
+- [OpenAI API Key](https://platform.openai.com/api-keys) (for Whisper transcription)
 
 ### Installation
 
@@ -82,19 +82,18 @@
    
    Navigate to `http://localhost:5173`
 
-### Cloud Run large-MP4 fast path
+### Resumable streaming media pipeline
 
-For `.mp4`, `.m4v`, and `.mov` files with mono or stereo AAC-LC audio, the browser reads the local MP4 index and uploads only independent audio segments (up to 12 MB each). `POST /api/audio-segments/transcribe` is stateless, so concurrent requests may be handled by different Cloud Run instances. Unsupported containers and codecs automatically use the compatible full-file upload path.
+Large media files are read in a Web Worker and uploaded in bounded 8 MB chunks. Upload manifests are persisted on the server, so selecting the same file again resumes only the missing chunks. The server exposes the incomplete upload to FFmpeg as a blocking, seekable Range source; this allows audio decoding and transcription to begin before upload completion, including for MP4 files whose `moov` metadata is at the end. Caption deltas and task progress return over SSE.
 
-After deploying, check `GET /health`. The active revision should return `"audioTrackSegments": true`.
+After deploying, check `GET /health`. The active revision should return `"resumableStreamingUpload": true` and `"incrementalCaptionEvents": true`. Upload chunks, SSE, and the private FFmpeg Range reader must reach the same task storage; use one instance, sticky routing with durable shared storage, or an equivalent task-aware deployment.
 
 ## 📖 Usage
 
 1. **Upload Media** - Drag and drop or click to upload a video, audio, or subtitle file
 2. **Generate Subtitles** - Click "Generate Subtitles" to transcribe using Whisper
-3. **Translate** - Select target language and click "Translate" for bilingual subtitles
-4. **Preview** - Play media and see subtitles sync in real-time
-5. **Export** - Download subtitles in SRT or VTT format
+3. **Preview** - Play media and see subtitles sync in real-time
+4. **Export** - Download subtitles in SRT, VTT, or TXT format
 
 ## 🛠️ Tech Stack
 
@@ -102,8 +101,8 @@ After deploying, check `GET /health`. The active revision should return `"audioT
 |----------|-------------|
 | Frontend | React 19, TypeScript, Vite |
 | Backend | Node.js, Express |
-| AI/ML | OpenAI Whisper, GPT-4 |
-| Media | FFmpeg (via @ffmpeg/ffmpeg) |
+| AI/ML | OpenAI Whisper |
+| Media | Native FFmpeg on the backend |
 | UI | Lucide Icons, Custom CSS |
 
 ## 📁 Project Structure
@@ -154,7 +153,7 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 <a name="中文"></a>
 # AI 媒体字幕助手 (AI Powered Media Captions)
 
-🎬 **基于 AI 的自动字幕生成与翻译工具**
+🎬 **基于 AI 的自动字幕生成与编辑工具**
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![Node.js](https://img.shields.io/badge/Node.js-20.8+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -164,10 +163,9 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 ## 🌟 功能特点
 
 - 🎙️ **语音识别** - 使用 OpenAI Whisper 实现精准转录
-- 🌐 **多语言翻译** - 使用 GPT 将字幕翻译成 10+ 种语言
 - 📹 **视频和音频支持** - 支持上传视频、音频或字幕文件
 - ⚡ **实时预览** - 媒体播放与字幕高亮同步显示
-- 📥 **导出选项** - 支持导出 SRT 或 VTT 格式（双语或单语）
+- 📥 **导出选项** - 支持导出 SRT、VTT 或纯文本
 - 🎨 **现代界面** - 优美响应式界面，支持深色模式
 
 ## 📦 下载桌面应用
@@ -184,7 +182,8 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 ### 环境要求
 
 - [Node.js](https://nodejs.org/) 20.8.1 或更高版本
-- [OpenAI API Key](https://platform.openai.com/api-keys)（用于 Whisper 和 GPT）
+- 后端运行环境可直接调用 [FFmpeg](https://ffmpeg.org/)
+- [OpenAI API Key](https://platform.openai.com/api-keys)（用于 Whisper 转录）
 
 ### 安装步骤
 
@@ -228,19 +227,18 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
    
    访问 `http://localhost:5173`
 
-### Cloud Run 大型 MP4 快速路径
+### 可续传流式媒体管线
 
-对于音轨为单声道或双声道 AAC-LC 的 `.mp4`、`.m4v` 和 `.mov` 文件，浏览器只读取本地 MP4 索引并上传独立音频分段（每段不超过 12 MB）。`POST /api/audio-segments/transcribe` 是无状态接口，因此并发请求可以由不同 Cloud Run 实例处理；不支持的容器或音频编码会自动使用兼容的完整文件上传路径。
+大型媒体由 Web Worker 以固定 8 MB 分片读取和上传，服务端持久化分片清单；再次选择同一个文件时只补传缺失分片。服务端把尚未完成的上传暴露为可等待、可定位的 Range 媒体源，FFmpeg 因而可以在上传结束前开始解码音轨和转写，也能处理 `moov` 元数据位于文件尾部的 MP4。任务进度与新增字幕通过 SSE 持续回传。
 
-部署后访问 `GET /health`，当前版本应返回 `"audioTrackSegments": true`。
+部署后访问 `GET /health`，当前版本应返回 `"resumableStreamingUpload": true` 和 `"incrementalCaptionEvents": true`。上传分片、SSE 与 FFmpeg 私有 Range 读取必须访问同一份任务存储；可采用单实例、带持久共享存储的粘性路由，或等价的任务路由方案。
 
 ## 📖 使用说明
 
 1. **上传媒体** - 拖放或点击上传视频、音频或字幕文件
 2. **生成字幕** - 点击"生成字幕"使用 Whisper 转录
-3. **翻译字幕** - 选择目标语言，点击"翻译"生成双语字幕
-4. **预览** - 播放媒体，实时查看字幕同步效果
-5. **导出** - 下载 SRT 或 VTT 格式的字幕文件
+3. **预览** - 播放媒体，实时查看字幕同步效果
+4. **导出** - 下载 SRT、VTT 或 TXT 格式的字幕文件
 
 ## 🛠️ 技术栈
 
@@ -248,8 +246,8 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 |------|------|
 | 前端 | React 19, TypeScript, Vite |
 | 后端 | Node.js, Express |
-| AI/ML | OpenAI Whisper, GPT-4 |
-| 媒体处理 | FFmpeg (via @ffmpeg/ffmpeg) |
+| AI/ML | OpenAI Whisper |
+| 媒体处理 | 服务端原生 FFmpeg |
 | UI | Lucide Icons, 自定义 CSS |
 
 ## 📁 项目结构

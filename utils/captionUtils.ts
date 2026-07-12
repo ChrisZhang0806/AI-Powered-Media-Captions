@@ -1,5 +1,4 @@
-import { CaptionSegment, ExportFormat, DownloadMode } from "../types";
-import { Language } from "./i18n";
+import { CaptionSegment, ExportFormat } from "../types";
 
 const normalizeTimestamp = (time: string, format: ExportFormat): string => {
   const parts = time.split(/[,.]/);
@@ -35,59 +34,15 @@ export const generateFileContent = (captions: CaptionSegment[], format: ExportFo
 export const downloadCaptions = (
   captions: CaptionSegment[],
   format: ExportFormat,
-  filename: string,
-  mode: DownloadMode = 'bilingual',
-  splitBilingual: boolean = false,
-  metadata?: { targetLang?: string; sourceLang?: string; uiLanguage?: Language }
+  filename: string
 ) => {
-  console.log('[Download] 开始下载:', { format, filename, mode, captionsCount: captions.length });
-
-  if (splitBilingual && mode === 'bilingual') {
-    const originalCaptions = captions.map(c => ({
-      ...c,
-      text: c.text.split('\n')[0] || ''
-    }));
-    const translatedCaptions = captions.map(c => ({
-      ...c,
-      text: c.text.split('\n')[1] || ''
-    }));
-
-    downloadSingleFile(originalCaptions, format, `${filename}_original`);
-    setTimeout(() => {
-      const translatedFilename = metadata?.targetLang ? `${filename}_translated_${metadata.targetLang}` : `${filename}_translated`;
-      downloadSingleFile(translatedCaptions, format, translatedFilename);
-    }, 500);
-    return;
-  }
-
-  let finalCaptions = captions;
-  if (mode === 'original') {
-    finalCaptions = captions.map(c => ({ ...c, text: c.text.split('\n')[0] || '' }));
-  } else if (mode === 'translated') {
-    finalCaptions = captions.map(c => ({ ...c, text: c.text.split('\n')[1] || c.text }));
-  }
-
-  let finalFilename = filename;
-  if (mode === 'translated') {
-    finalFilename = metadata?.targetLang ? `${filename}_translated_${metadata.targetLang}` : `${filename}_translated`;
-  } else if (mode === 'bilingual') {
-    finalFilename = (metadata?.sourceLang && metadata?.targetLang)
-      ? `${filename}_bilingual_${metadata.sourceLang}-${metadata.targetLang}`
-      : `${filename}_bilingual`;
-  }
-
-  downloadSingleFile(finalCaptions, format, finalFilename);
+  downloadSingleFile(captions, format, filename);
 };
 
 const downloadSingleFile = (captions: CaptionSegment[], format: ExportFormat, filename: string) => {
-  if (captions.length === 0) {
-    console.warn('[Download] 没有字幕可下载');
-    alert('没有字幕可下载');
-    return;
-  }
+  if (captions.length === 0) return;
 
   const content = generateFileContent(captions, format);
-  console.log('[Download] 生成内容长度:', content.length);
 
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -102,7 +57,6 @@ const downloadSingleFile = (captions: CaptionSegment[], format: ExportFormat, fi
   setTimeout(() => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    console.log('[Download] 下载触发完成');
   }, 100);
 };
 

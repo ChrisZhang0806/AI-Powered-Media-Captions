@@ -1,14 +1,16 @@
-import type { CaptionMode, CaptionSegment, ProgressInfo, SegmentStyle } from '../types';
-import type { Language } from '../utils/i18n';
+import type { CaptionSegment, ProgressInfo, SegmentStyle } from '../types';
+import { Language, getTranslation } from '../utils/i18n';
+import { UserFacingError } from '../utils/userFacingError';
 import {
     analyzeMp4Audio,
-    buildAacSegment,
+    buildAudioSegment,
     UnsupportedMp4AudioError
 } from '../utils/mp4AudioDemux';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 const FAST_PATH_CONCURRENCY = 3;
 const FAST_PATH_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov']);
+const MAX_SILENT_FULL_UPLOAD_BYTES = 256 * 1024 * 1024;
 
 class FastPathEndpointUnavailableError extends Error {
     constructor() {
@@ -46,12 +48,17 @@ const mergeCaptions = (captions: CaptionSegment[]): CaptionSegment[] => {
     return unique.map((caption, index) => ({ ...caption, id: index }));
 };
 
-const readResponseError = async (response: Response): Promise<Error> => {
+const readResponseError = async (response: Response, uiLanguage: Language): Promise<Error> => {
+    const fallback = getTranslation(uiLanguage).errorAudioSegment;
+    if (uiLanguage === 'zh-TW') return new UserFacingError(fallback);
     try {
         const body = await response.json();
-        return new Error(body.error || `Audio segment request failed (${response.status})`);
+        const message = typeof body.error === 'string' ? body.error : '';
+        const containsChinese = /[\u3400-\u9fff]/.test(message);
+        if ((uiLanguage === 'en' && containsChinese) || (uiLanguage === 'zh' && !containsChinese)) return new UserFacingError(fallback);
+        return new UserFacingError(message || fallback);
     } catch {
-        return new Error(`Audio segment request failed (${response.status})`);
+        return new UserFacingError(fallback);
     }
 };
 
@@ -61,14 +68,37 @@ const isFastPathCandidate = (file: File): boolean => {
     return FAST_PATH_EXTENSIONS.has(extension);
 };
 
+const supportsAudioSegmentEndpoint = async (signal?: AbortSignal): Promise<boolean> => {
+    try {
+        const response = await fetch(`${SERVER_URL}/health`, {
+            method: 'GET',
+            cache: 'no-store',
+            signal
+        });
+        if (!response.ok) return false;
+        const health = await response.json();
+        return health?.features?.audioTrackSegments === true;
+    } catch {
+        return false;
+    }
+};
+
+const createProtectedFallbackError = (
+    file: File,
+    uiLanguage: Language,
+    cause: 'service' | 'format'
+) => {
+    const t = getTranslation(uiLanguage);
+    const template = cause === 'service' ? t.errorFastPathUnavailable : t.errorFastPathFormat;
+    return new UserFacingError(template.replace('{size}', formatFileSize(file.size)));
+};
+
 /**
- * Upload only the AAC track from a local MP4-family file. Each request is
+ * Upload only the audio track from a local MP4-family file. Each request is
  * stateless, so Cloud Run can route segments to different instances safely.
  */
 export const transcribeMp4AudioFastPath = async (
     file: File,
-    targetLanguage: string,
-    mode: CaptionMode,
     segmentStyle: SegmentStyle,
     contextPrompt: string,
     onChunk: (segments: CaptionSegment[]) => void,
@@ -78,11 +108,25 @@ export const transcribeMp4AudioFastPath = async (
     signal?: AbortSignal
 ): Promise<boolean> => {
     if (!isFastPathCandidate(file)) return false;
+    const t = getTranslation(uiLanguage);
 
     const internalController = new AbortController();
     const forwardAbort = () => internalController.abort(signal?.reason);
     if (signal?.aborted) forwardAbort();
     else signal?.addEventListener('abort', forwardAbort, { once: true });
+
+    const endpointAvailable = await supportsAudioSegmentEndpoint(internalController.signal);
+    if (!endpointAvailable) {
+        signal?.removeEventListener('abort', forwardAbort);
+        if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
+            throw createProtectedFallbackError(
+                file,
+                uiLanguage,
+                'service'
+            );
+        }
+        return false;
+    }
 
     let plan;
     try {
@@ -90,16 +134,18 @@ export const transcribeMp4AudioFastPath = async (
             signal: internalController.signal,
             onProgress: (progress) => onProgress?.({
                 stage: 'extracting_audio',
-                stageLabel: uiLanguage === 'zh' ? '分析本地音轨...' : 'Analyzing local audio track...',
-                progress: Math.max(1, Math.round(progress * 0.1)),
-                detail: uiLanguage === 'zh'
-                    ? `仅扫描本地文件索引，不上传 ${formatFileSize(file.size)} 的视频画面`
-                    : `Scanning the local index only; ${formatFileSize(file.size)} of video is not uploaded`
+                stageLabel: t.progressPreparing,
+                progress: Math.max(1, Math.round(progress * 0.1))
             })
         });
     } catch (error) {
         signal?.removeEventListener('abort', forwardAbort);
-        if (error instanceof UnsupportedMp4AudioError) return false;
+        if (error instanceof UnsupportedMp4AudioError) {
+            if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
+                throw createProtectedFallbackError(file, uiLanguage, 'format');
+            }
+            return false;
+        }
         throw error;
     }
 
@@ -111,17 +157,16 @@ export const transcribeMp4AudioFastPath = async (
 
     const uploadSegment = async (segmentIndex: number): Promise<CaptionSegment[]> => {
         const segment = plan.segments[segmentIndex];
-        const audioBlob = await buildAacSegment(file, plan, segment, {
+        const audioBlob = await buildAudioSegment(file, plan, segment, {
             signal: internalController.signal
         });
 
         const formData = new FormData();
-        formData.append('file', audioBlob, `audio-segment-${segmentIndex}.aac`);
+        formData.append('file', audioBlob, `audio-segment-${segmentIndex}.${plan.fileExtension}`);
         formData.append('startTime', String(segment.startTime));
         formData.append('segmentStyle', segmentStyle);
         formData.append('contextPrompt', contextPrompt);
-        formData.append('targetLanguage', targetLanguage);
-        formData.append('captionMode', mode);
+        formData.append('uiLanguage', uiLanguage);
         if (apiKey) formData.append('apiKey', apiKey);
 
         const response = await fetch(`${SERVER_URL}/api/audio-segments/transcribe`, {
@@ -132,7 +177,7 @@ export const transcribeMp4AudioFastPath = async (
         if ([404, 405, 501].includes(response.status)) {
             throw new FastPathEndpointUnavailableError();
         }
-        if (!response.ok) throw await readResponseError(response);
+        if (!response.ok) throw await readResponseError(response, uiLanguage);
 
         const body = await response.json() as SegmentResponse;
         uploadedAudioBytes += audioBlob.size;
@@ -152,11 +197,13 @@ export const transcribeMp4AudioFastPath = async (
             const progress = 10 + Math.round((completedSegments / plan.segments.length) * 90);
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: uiLanguage === 'zh' ? '音轨分段转写中...' : 'Transcribing audio segments...',
+                stageLabel: t.progressTranscribing,
                 progress: Math.min(100, progress),
-                detail: uiLanguage === 'zh'
-                    ? `${completedSegments}/${plan.segments.length} 段 · 已传音轨 ${formatFileSize(uploadedAudioBytes)} / ${totalAudioSize}`
-                    : `${completedSegments}/${plan.segments.length} segments · audio ${formatFileSize(uploadedAudioBytes)} / ${totalAudioSize}`
+                detail: t.progressSegmentsDetail
+                    .replace('{completed}', completedSegments.toString())
+                    .replace('{total}', plan.segments.length.toString())
+                    .replace('{uploaded}', formatFileSize(uploadedAudioBytes))
+                    .replace('{size}', totalAudioSize)
             });
         }
     };
@@ -166,12 +213,10 @@ export const transcribeMp4AudioFastPath = async (
             throw new UnsupportedMp4AudioError('No AAC audio segments were found');
         }
         onProgress?.({
-            stage: 'extracting_audio',
-            stageLabel: uiLanguage === 'zh' ? '音轨快速路径已启用' : 'Audio fast path enabled',
+            stage: 'transcribing',
+            stageLabel: t.progressTranscribing,
             progress: 10,
-            detail: uiLanguage === 'zh'
-                ? `视频 ${formatFileSize(file.size)}，实际只需上传约 ${totalAudioSize} 音轨`
-                : `Video ${formatFileSize(file.size)}; only about ${totalAudioSize} of audio will be uploaded`
+            detail: t.progressAudioOnlyDetail.replace('{size}', totalAudioSize)
         });
 
         const runnerCount = Math.min(FAST_PATH_CONCURRENCY, plan.segments.length);
@@ -179,7 +224,16 @@ export const transcribeMp4AudioFastPath = async (
         return true;
     } catch (error) {
         internalController.abort(error);
-        if (error instanceof FastPathEndpointUnavailableError && completedSegments === 0) return false;
+        if (error instanceof FastPathEndpointUnavailableError && completedSegments === 0) {
+            if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
+                throw createProtectedFallbackError(
+                    file,
+                    uiLanguage,
+                    'service'
+                );
+            }
+            return false;
+        }
         throw error;
     } finally {
         signal?.removeEventListener('abort', forwardAbort);

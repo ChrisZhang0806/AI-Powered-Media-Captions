@@ -1,22 +1,25 @@
 import { useState, useCallback } from 'react';
 import { validateApiKey } from '../services/openaiService';
+import { Language, getTranslation } from '../utils/i18n';
 
-export const useApiKey = () => {
+export const useApiKey = (uiLanguage: Language) => {
+    const t = getTranslation(uiLanguage);
     const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('openai_api_key') || '');
     const [showApiKeyPanel, setShowApiKeyPanel] = useState(false);
     const [tempApiKey, setTempApiKey] = useState('');
     const [isValidatingKey, setIsValidatingKey] = useState(false);
-    const [keyError, setKeyError] = useState<string>('');
+    const [hasKeyError, setHasKeyError] = useState(false);
+    const keyError = hasKeyError ? t.errorInvalidApiKey : '';
 
     const openPanel = useCallback(() => {
         setTempApiKey(userApiKey);
         setShowApiKeyPanel(true);
-        setKeyError('');
+        setHasKeyError(false);
     }, [userApiKey]);
 
     const closePanel = useCallback(() => {
         setShowApiKeyPanel(false);
-        setKeyError('');
+        setHasKeyError(false);
     }, []);
 
     const saveApiKey = useCallback(async (onSuccess?: () => void) => {
@@ -38,7 +41,7 @@ export const useApiKey = () => {
             onSuccess?.(); // 调用成功回调
             return true;
         } else {
-            setKeyError('API Key 无效或已过期，请检查后重试');
+            setHasKeyError(true);
             return false;
         }
     }, [tempApiKey]);

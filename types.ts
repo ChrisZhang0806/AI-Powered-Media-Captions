@@ -21,16 +21,23 @@ export interface VideoMetadata {
   type: string;
   url: string; // Blob URL for preview
   previewAvailable?: boolean;
+  container?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  sampleRate?: number;
+  audioChannels?: number;
+  bitrate?: number;
+  videoBitrate?: number;
+  audioBitrate?: number;
 }
-
-export type DownloadMode = 'bilingual' | 'original' | 'translated';
-
-export type CaptionMode = 'Original' | 'Translation' | 'Bilingual';
 
 export type SegmentStyle = 'compact' | 'natural' | 'detailed';
 
 export interface ProgressInfo {
-  stage: 'uploading' | 'queued' | 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'translating' | 'refining';
+  stage: 'uploading' | 'queued' | 'loading_ffmpeg' | 'extracting_audio' | 'segmenting' | 'transcribing' | 'refining';
   stageLabel: string;
   progress: number; // 0-100
   detail?: string;

@@ -1,14 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { AlertCircle } from 'lucide-react';
-import { AppStatus, CaptionSegment, VideoMetadata, ExportFormat, CaptionMode, ProgressInfo, SegmentStyle } from './types';
-import { transcribeWithServer, checkServerHealth } from './services/serverService';
-import { translateSegments } from './services/openaiService';
+import { AppStatus, CaptionSegment, VideoMetadata, ProgressInfo, SegmentStyle } from './types';
+import { transcribeWithServer, checkServerHealth, cancelServerTranscription } from './services/serverService';
 import { parseCaptions } from './utils/captionUtils';
-import { detectLanguage } from './utils/helpers';
 import { useAudioAnalyser } from './hooks/useAudioAnalyser';
 import { useMediaSync } from './hooks/useMediaSync';
 import { useApiKey } from './hooks/useApiKey';
-import { Language, getTranslation } from './utils/i18n';
+import { Language, getTranslation, isLanguage } from './utils/i18n';
 
 // Components
 import { Header } from './components/Header';
@@ -16,6 +13,17 @@ import { FileUploader } from './components/FileUploader';
 import { MediaPlayer } from './components/MediaPlayer';
 import { ControlsPanel } from './components/ControlsPanel';
 import { SubtitleList } from './components/SubtitleList';
+import { MaterialIcon } from './components/MaterialIcon';
+
+const hasDraggedFiles = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files');
+const MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024;
+const MAX_BROWSER_METADATA_BYTES = 256 * 1024 * 1024;
+const SUPPORTED_FILE_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'ts', 'mp3', 'wav', 'm4a', 'aac', 'srt', 'vtt']);
+
+const isSupportedFile = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    return file.type.startsWith('video/') || file.type.startsWith('audio/') || SUPPORTED_FILE_EXTENSIONS.has(extension);
+};
 
 const App: React.FC = () => {
     // State Management
@@ -25,34 +33,20 @@ const App: React.FC = () => {
     const [captions, setCaptions] = useState<CaptionSegment[]>([]);
     const [errorMsg, setErrorMsg] = useState<string>('');
     const [uiLanguage, setUiLanguage] = useState<Language>(() => {
-        return (localStorage.getItem('ui_language') as Language) || 'en';
+        const savedLanguage = localStorage.getItem('ui_language');
+        if (isLanguage(savedLanguage)) return savedLanguage;
+        return /^(zh-tw|zh-hk|zh-mo)/i.test(navigator.language) ? 'zh-TW' : 'zh';
     });
     const t = getTranslation(uiLanguage);
 
-    const [sourceLang, setSourceLang] = useState('English');
-    const [targetLang, setTargetLang] = useState('Chinese');
-    const [captionMode, setCaptionMode] = useState<CaptionMode>('Original');
-    const [segmentStyle, setSegmentStyle] = useState<SegmentStyle>('natural');
-    const [styleTemp, setStyleTemp] = useState(0.5);
-    const [contextPrompt, setContextPrompt] = useState('');
-
-
-    // Language Auto-switching logic
-    const prevSource = useRef(sourceLang);
-    const prevTarget = useRef(targetLang);
     React.useEffect(() => {
-        if (sourceLang === targetLang) {
-            if (sourceLang !== prevSource.current) {
-                setTargetLang(sourceLang === 'Chinese' ? 'English' : 'Chinese');
-            } else if (targetLang !== prevTarget.current) {
-                setSourceLang(targetLang === 'Chinese' ? 'English' : 'Chinese');
-            }
-        }
-        prevSource.current = sourceLang;
-        prevTarget.current = targetLang;
-    }, [sourceLang, targetLang]);
+        document.documentElement.lang = uiLanguage === 'zh' ? 'zh-CN' : uiLanguage;
+        document.title = t.brand;
+    }, [t.brand, uiLanguage]);
 
-    const [isTranslating, setIsTranslating] = useState(false);
+    const segmentStyle: SegmentStyle = 'natural';
+    const [contextPrompt, setContextPrompt] = useState('');
+    const [isLeftDropActive, setIsLeftDropActive] = useState(false);
 
     // Editing State
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -65,14 +59,16 @@ const App: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const processingAbortRef = useRef<AbortController | null>(null);
     const previewUrlRef = useRef<string | null>(null);
+    const metadataInspectionRef = useRef(0);
 
     React.useEffect(() => () => {
+        metadataInspectionRef.current++;
         processingAbortRef.current?.abort();
         if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     }, []);
 
     // Custom Hooks
-    const apiKeyData = useApiKey();
+    const apiKeyData = useApiKey(uiLanguage);
     const isAudio = videoMeta?.type.startsWith('audio/') || false;
 
     useAudioAnalyser({ mediaRef, canvasRef, isAudio });
@@ -82,21 +78,20 @@ const App: React.FC = () => {
     const processFile = async (file: File) => {
         const fileName = file.name.toLowerCase();
 
-        if (previewUrlRef.current) {
-            URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
-        }
-
         // Check if it's a subtitle file
         if (fileName.endsWith('.srt') || fileName.endsWith('.vtt')) {
             const text = await file.text();
             const parsedCaptions = parseCaptions(text);
 
             if (parsedCaptions.length > 0) {
+                metadataInspectionRef.current++;
+                cancelServerTranscription(processingAbortRef.current);
+                processingAbortRef.current = null;
+                if (previewUrlRef.current) {
+                    URL.revokeObjectURL(previewUrlRef.current);
+                    previewUrlRef.current = null;
+                }
                 setCaptions(parsedCaptions);
-                const detectedLang = detectLanguage(parsedCaptions.map(c => c.text));
-                setSourceLang(detectedLang);
-                setTargetLang(detectedLang === 'Chinese' ? 'English' : 'Chinese');
                 setVideoFile(null);
                 setVideoMeta({
                     name: file.name,
@@ -117,8 +112,15 @@ const App: React.FC = () => {
             ? 'video/mp2t'
             : file.type;
 
+        const inspectionId = ++metadataInspectionRef.current;
+        cancelServerTranscription(processingAbortRef.current);
+        processingAbortRef.current = null;
         const previewAvailable = !fileName.endsWith('.ts');
         const previewUrl = previewAvailable ? URL.createObjectURL(file) : '';
+        const extension = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : undefined;
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+        }
         previewUrlRef.current = previewUrl || null;
 
         setVideoFile(file);
@@ -128,11 +130,94 @@ const App: React.FC = () => {
             size: file.size,
             type: fileType,
             url: previewUrl,
-            previewAvailable
+            previewAvailable,
+            container: extension || fileType.split('/').pop()?.toUpperCase()
         });
         setErrorMsg('');
         setStatus(AppStatus.IDLE);
         setProgressInfo(null);
+
+        if (
+            file.size <= MAX_BROWSER_METADATA_BYTES
+            && ['mp4', 'm4v', 'mov'].some((extensionName) => fileName.endsWith(`.${extensionName}`))
+        ) {
+            void import('./utils/mediaMetadata')
+                .then(({ inspectMp4Metadata }) => inspectMp4Metadata(file))
+                .then((technicalMetadata) => {
+                    if (metadataInspectionRef.current !== inspectionId) return;
+                    setVideoMeta((current) => current ? { ...current, ...technicalMetadata } : current);
+                })
+                .catch(() => {
+                    // Browser metadata still provides duration and dimensions when MP4 details are unavailable.
+                });
+        }
+    };
+
+    const handleFileSelect = async (file: File) => {
+        if (!file.name || file.size <= 0) {
+            setErrorMsg(t.errorInvalidFile);
+            return;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+            setErrorMsg(t.errorFileTooLarge);
+            return;
+        }
+        if (!isSupportedFile(file)) {
+            setErrorMsg(t.errorUnsupportedFile);
+            return;
+        }
+
+        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING;
+        if (hasWorkToLose && !window.confirm(t.confirmReset)) return;
+
+        await processFile(file);
+    };
+
+    const handleLeftDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasDraggedFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setIsLeftDropActive(true);
+    };
+
+    const handleLeftDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasDraggedFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'copy';
+        setIsLeftDropActive(true);
+    };
+
+    const handleLeftDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextTarget = event.relatedTarget as Node | null;
+        if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+            setIsLeftDropActive(false);
+        }
+    };
+
+    const handleLeftDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+        const file = event.dataTransfer.files?.[0];
+        if (!file && !hasDraggedFiles(event)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        setIsLeftDropActive(false);
+        if (!file) return;
+        await handleFileSelect(file);
+    };
+
+    const handleMediaMetadata = (metadata: Pick<VideoMetadata, 'duration' | 'width' | 'height'>) => {
+        setVideoMeta((current) => {
+            if (!current) return current;
+            const duration = metadata.duration || current.duration;
+            return {
+                ...current,
+                ...metadata,
+                bitrate: current.bitrate || (duration ? (current.size * 8) / duration : undefined)
+            };
+        });
     };
 
     // Auto-scroll to bottom of subtitle list
@@ -157,7 +242,7 @@ const App: React.FC = () => {
             return;
         }
 
-        processingAbortRef.current?.abort();
+        cancelServerTranscription(processingAbortRef.current);
         const controller = new AbortController();
         processingAbortRef.current = controller;
 
@@ -167,7 +252,6 @@ const App: React.FC = () => {
         setProgressInfo(null);
 
         try {
-            let lastSegments: CaptionSegment[] = [];
             const userApiKey = apiKeyData.userApiKey;
 
             const isServerAvailable = await checkServerHealth();
@@ -177,27 +261,22 @@ const App: React.FC = () => {
 
             await transcribeWithServer(
                 videoFile,
-                targetLang,
-                captionMode,
                 segmentStyle,
                 contextPrompt,
                 (streamedSegments) => {
+                    if (controller.signal.aborted) return;
                     setCaptions(streamedSegments);
-                    lastSegments = streamedSegments;
                     scrollToBottom();
                 },
-                (info) => setProgressInfo(info),
+                (info) => {
+                    if (!controller.signal.aborted) setProgressInfo(info);
+                },
                 userApiKey,
                 uiLanguage,
                 controller.signal
             );
 
             if (controller.signal.aborted) return;
-            if (lastSegments.length > 0) {
-                const detectedLang = detectLanguage(lastSegments.map(c => c.text));
-                setSourceLang(detectedLang);
-            }
-
             setStatus(AppStatus.SUCCESS);
             setProgressInfo(null);
         } catch (err: any) {
@@ -209,75 +288,26 @@ const App: React.FC = () => {
             if (processingAbortRef.current === controller) {
                 processingAbortRef.current = null;
             }
-            setIsTranslating(false);
-        }
-    };
-
-    const handleTranslateExisting = async () => {
-        if (captions.length === 0 || isTranslating || sourceLang === targetLang) return;
-
-        // Check if API Key exists
-        if (!apiKeyData.userApiKey) {
-            setErrorMsg(t.errorNoApiKey);
-            apiKeyData.openPanel();
-            return;
-        }
-
-        setIsTranslating(true);
-        setErrorMsg('');
-
-        // Extract original text (remove any existing translation)
-        const originalCaptions = captions.map(cap => ({
-            ...cap,
-            text: cap.text.split('\n')[0] // Keep only original text
-        }));
-
-        // Initialize with empty translation placeholder (shows "正在翻译中..." / "Waiting for translation...")
-        const initialPlaceholder = originalCaptions.map(cap => ({
-            ...cap,
-            text: `${cap.text}\n` // Empty second line triggers placeholder display
-        }));
-        setCaptions(initialPlaceholder);
-
-        try {
-            await translateSegments(originalCaptions, targetLang, styleTemp, (translatedChunks) => {
-                // Real-time stream merge: Original + Translation
-                const merged = originalCaptions.map((orig, i) => {
-                    const translatedText = translatedChunks[i]?.text || '';
-                    // Only show translation if it's different from original (actual translation received)
-                    const isActualTranslation = translatedText && translatedText !== orig.text;
-                    return {
-                        ...orig,
-                        text: `${orig.text}\n${isActualTranslation ? translatedText : ''}`
-                    };
-                });
-                setCaptions(merged);
-            }, apiKeyData.userApiKey, uiLanguage);
-            setCaptionMode('Bilingual');
-        } catch (err: any) {
-            setErrorMsg(err.message || t.errorTranslateFailed);
-        } finally {
-            setIsTranslating(false);
         }
     };
 
     const handleReset = () => {
-        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING || isTranslating;
+        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING;
         if (hasWorkToLose && !window.confirm(t.confirmReset)) {
             return;
         }
 
+        metadataInspectionRef.current++;
         setVideoFile(null);
         setVideoMeta(null);
         setCaptions([]);
-        processingAbortRef.current?.abort();
+        cancelServerTranscription(processingAbortRef.current);
         processingAbortRef.current = null;
         if (previewUrlRef.current) {
             URL.revokeObjectURL(previewUrlRef.current);
             previewUrlRef.current = null;
         }
         setStatus(AppStatus.IDLE);
-        setCaptionMode('Original');
         setProgressInfo(null);
         setErrorMsg('');
     };
@@ -290,7 +320,7 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="app-shell min-h-screen flex flex-col font-sans text-zinc-950 dark:text-zinc-100">
+        <div className="app-shell flex min-h-screen flex-col font-sans text-on-surface">
             <Header
                 apiKeyData={apiKeyData}
                 onApiKeySuccess={() => setErrorMsg('')}
@@ -301,82 +331,80 @@ const App: React.FC = () => {
                 }}
             />
 
-            <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-5 overflow-visible lg:overflow-hidden">
+            <main className="mx-auto w-full max-w-[1600px] flex-1 overflow-visible px-4 py-4 sm:px-6 sm:py-6 lg:overflow-hidden lg:pt-0">
                 {errorMsg && (
-                    <div className="app-panel mb-4 p-3 rounded-lg flex items-start gap-2 text-red-700 dark:text-red-300" role="alert">
-                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <div className="mb-4 flex items-start gap-2 rounded-xl border border-error/20 bg-error-container p-3 text-on-error-container" role="alert">
+                        <MaterialIcon name="error" size={18} className="mt-px text-error" />
                         <p className="text-xs">{errorMsg}</p>
                     </div>
                 )}
 
-                {!videoFile && captions.length === 0 ? (
-                    <FileUploader onFileSelect={processFile} uiLanguage={uiLanguage} />
-                ) : (
-                    <div className={`grid grid-cols-1 ${(!videoFile && captions.length > 0) ? 'lg:grid-cols-1' : 'lg:grid-cols-8'} gap-4 lg:gap-5 lg:h-[calc(100vh-112px)]`}>
-                        {/* Left Panel: Media & Processing Controls */}
-                        {(!(!videoFile && captions.length > 0)) && (
-                            <div className="lg:col-span-3 flex min-h-0 flex-col gap-4">
-                                <MediaPlayer
-                                    videoMeta={videoMeta}
-                                    isAudio={isAudio}
-                                    mediaRef={mediaRef}
-                                    canvasRef={canvasRef}
-                                    activeCaption={activeCaption}
-                                    uiLanguage={uiLanguage}
-                                />
+                <div className="grid grid-cols-1 gap-4 lg:h-[calc(100vh-68px)] lg:grid-cols-12">
+                    {/* Left Panel: Media, upload, and processing controls */}
+                    <div
+                        className="relative flex min-h-0 flex-col gap-4 rounded-2xl lg:col-span-4"
+                        onDragEnter={handleLeftDragEnter}
+                        onDragOver={handleLeftDragOver}
+                        onDragLeave={handleLeftDragLeave}
+                        onDrop={handleLeftDrop}
+                    >
+                        <MediaPlayer
+                            videoMeta={videoMeta}
+                            isAudio={isAudio}
+                            mediaRef={mediaRef}
+                            canvasRef={canvasRef}
+                            activeCaption={activeCaption}
+                            uiLanguage={uiLanguage}
+                            onMetadataLoaded={handleMediaMetadata}
+                        />
 
-                                <ControlsPanel
-                                    videoMeta={videoMeta}
-                                    isAudio={isAudio}
-                                    status={status}
-                                    captionMode={captionMode}
-                                    setCaptionMode={setCaptionMode}
-                                    contextPrompt={contextPrompt}
-                                    setContextPrompt={setContextPrompt}
-                                    styleTemp={styleTemp}
-                                    setStyleTemp={setStyleTemp}
-                                    targetLang={targetLang}
-                                    setTargetLang={setTargetLang}
-                                    isTranslating={isTranslating}
-                                    progressInfo={progressInfo}
-                                    captionsCount={captions.length}
-                                    uiLanguage={uiLanguage}
-                                    onReset={handleReset}
-                                    onProcess={handleProcess}
-                                />
-                            </div>
+                        {!videoFile && <FileUploader onFileSelect={handleFileSelect} uiLanguage={uiLanguage} />}
+
+                        {videoFile && (
+                            <ControlsPanel
+                                videoMeta={videoMeta}
+                                isAudio={isAudio}
+                                status={status}
+                                contextPrompt={contextPrompt}
+                                setContextPrompt={setContextPrompt}
+                                progressInfo={progressInfo}
+                                captionsCount={captions.length}
+                                uiLanguage={uiLanguage}
+                                onReset={handleReset}
+                                onProcess={handleProcess}
+                            />
                         )}
 
-                        {/* Right Panel: Subtitle List */}
-                        <div className={`${(!videoFile && captions.length > 0) ? 'lg:col-span-8' : 'lg:col-span-5'} min-h-0`}>
-                            <SubtitleList
-                                isSubtitleOnly={!videoFile && captions.length > 0}
-                                captions={captions}
-                                activeCaption={activeCaption}
-                                videoMeta={videoMeta}
-                                editingId={editingId}
-                                editText={editText}
-                                isTranslating={isTranslating}
-                                sourceLang={sourceLang}
-                                targetLang={targetLang}
-                                captionMode={captionMode}
-                                styleTemp={styleTemp}
-                                uiLanguage={uiLanguage}
-
-                                onReset={handleReset}
-                                onJump={jumpToTime}
-                                onEditStart={(id, text) => { setEditingId(id); setEditText(text); }}
-                                onEditChange={setEditText}
-                                onEditSave={handleEditSave}
-
-                                setSourceLang={setSourceLang}
-                                setTargetLang={setTargetLang}
-                                setStyleTemp={setStyleTemp}
-                                onTranslate={handleTranslateExisting}
-                            />
-                        </div>
+                        {isLeftDropActive && (
+                            <div
+                                className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-primary bg-primary-fixed/95 px-6 text-center shadow-lg backdrop-blur-sm"
+                                aria-hidden="true"
+                            >
+                                <MaterialIcon name="upload" size={40} className="text-primary" />
+                                <p className="text-sm font-semibold text-on-primary-fixed">{t.dropFileHere}</p>
+                                <p className="text-xs text-on-primary-fixed/70">{t.supportFormat}</p>
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    {/* Right Panel: Subtitle List */}
+                    <div className="min-h-0 lg:col-span-8">
+                        <SubtitleList
+                            isSubtitleOnly={!videoFile && captions.length > 0}
+                            captions={captions}
+                            activeCaption={activeCaption}
+                            videoMeta={videoMeta}
+                            editingId={editingId}
+                            editText={editText}
+                            uiLanguage={uiLanguage}
+
+                            onJump={jumpToTime}
+                            onEditStart={(id, text) => { setEditingId(id); setEditText(text); }}
+                            onEditChange={setEditText}
+                            onEditSave={handleEditSave}
+                        />
+                    </div>
+                </div>
             </main>
         </div>
     );

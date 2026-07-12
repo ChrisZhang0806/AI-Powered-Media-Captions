@@ -26,7 +26,6 @@ Describe the tests you ran to verify your changes:
 - [ ] Tested with video file upload
 - [ ] Tested with audio file upload
 - [ ] Tested with subtitle file upload
-- [ ] Tested translation feature
 - [ ] Tested export functionality
 
 ## Screenshots (if applicable)

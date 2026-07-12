@@ -1,11 +1,13 @@
 import { createFile, type MP4BoxBuffer, type Movie, type Sample, type Track } from 'mp4box';
+import { readMp4MetadataBuffer } from './mediaMetadata';
+import { getPcmAudioConfig, registerPcmSampleEntries, type PcmAudioConfig } from './mp4PcmSupport';
 
-const SCAN_CHUNK_SIZE = 16 * 1024 * 1024;
 const MAX_SEGMENT_DURATION_SECONDS = 300;
 const MAX_SEGMENT_BYTES = 12 * 1024 * 1024;
 const MAX_RANGE_GAP = 64 * 1024;
 const MAX_RANGE_SIZE = 8 * 1024 * 1024;
 const ADTS_HEADER_SIZE = 7;
+const WAV_HEADER_SIZE = 44;
 
 const AAC_SAMPLE_RATES = [
     96000, 88200, 64000, 48000, 44100, 32000, 24000,
@@ -38,11 +40,15 @@ export interface AacSegmentIndex {
 
 export interface Mp4AudioPlan {
     codec: string;
+    audioFormat: 'aac' | 'wav';
+    fileExtension: 'aac' | 'wav';
+    mimeType: 'audio/aac' | 'audio/wav';
     sampleRate: number;
     channelCount: number;
     duration: number;
     encodedBytes: number;
     segments: AacSegmentIndex[];
+    pcmConfig?: PcmAudioConfig;
 }
 
 interface AnalyzeOptions {
@@ -59,7 +65,7 @@ interface BuildOptions {
 
 interface SampleOutputEntry {
     sample: AacSampleIndex;
-    outputOffset: number;
+    payloadOffset: number;
 }
 
 interface ReadRange {
@@ -87,39 +93,57 @@ const copySampleIndex = (sample: Sample): AacSampleIndex => ({
     timescale: sample.timescale
 });
 
-const validateAacTrack = (track: Track | undefined) => {
+const validateAudioTrack = (track: Track | undefined, firstSample: Sample) => {
     if (!track?.audio) {
         throw new UnsupportedMp4AudioError('The MP4 file does not contain an audio track');
     }
 
     const codecMatch = /^mp4a\.40\.(\d+)$/i.exec(track.codec || '');
-    if (!codecMatch || Number(codecMatch[1]) !== 2) {
+    if (codecMatch && Number(codecMatch[1]) === 2) {
+        const sampleRateIndex = AAC_SAMPLE_RATES.indexOf(track.audio.sample_rate);
+        if (sampleRateIndex < 0) {
+            throw new UnsupportedMp4AudioError(`Unsupported AAC sample rate: ${track.audio.sample_rate}`);
+        }
+        if (track.audio.channel_count < 1 || track.audio.channel_count > 2) {
+            throw new UnsupportedMp4AudioError(`Unsupported AAC channel count: ${track.audio.channel_count}`);
+        }
+        return {
+            audioFormat: 'aac' as const,
+            sampleRate: track.audio.sample_rate,
+            channelCount: track.audio.channel_count
+        };
+    }
+
+    const pcmConfig = getPcmAudioConfig(track, firstSample);
+    if (!pcmConfig) {
         throw new UnsupportedMp4AudioError(`Unsupported MP4 audio codec: ${track.codec || 'unknown'}`);
     }
-
-    const sampleRateIndex = AAC_SAMPLE_RATES.indexOf(track.audio.sample_rate);
-    if (sampleRateIndex < 0) {
-        throw new UnsupportedMp4AudioError(`Unsupported AAC sample rate: ${track.audio.sample_rate}`);
+    if (track.audio.sample_rate < 8000 || track.audio.sample_rate > 192000) {
+        throw new UnsupportedMp4AudioError(`Unsupported PCM sample rate: ${track.audio.sample_rate}`);
     }
-    if (track.audio.channel_count < 1 || track.audio.channel_count > 2) {
-        throw new UnsupportedMp4AudioError(`Unsupported AAC channel count: ${track.audio.channel_count}`);
+    if (track.audio.channel_count < 1 || track.audio.channel_count > 8) {
+        throw new UnsupportedMp4AudioError(`Unsupported PCM channel count: ${track.audio.channel_count}`);
     }
-
     return {
+        audioFormat: 'wav' as const,
         sampleRate: track.audio.sample_rate,
-        channelCount: track.audio.channel_count
+        channelCount: track.audio.channel_count,
+        pcmConfig
     };
 };
 
 const buildSegmentPlan = (
     samples: AacSampleIndex[],
     maxDuration: number,
-    maxBytes: number
+    maxBytes: number,
+    audioFormat: 'aac' | 'wav'
 ): AacSegmentIndex[] => {
     const segments: AacSegmentIndex[] = [];
     let currentSamples: AacSampleIndex[] = [];
     let currentBytes = 0;
     let currentStart = 0;
+    const frameOverhead = audioFormat === 'aac' ? ADTS_HEADER_SIZE : 0;
+    const segmentHeader = audioFormat === 'wav' ? WAV_HEADER_SIZE : 0;
 
     const commit = () => {
         if (currentSamples.length === 0) return;
@@ -128,7 +152,7 @@ const buildSegmentPlan = (
             index: segments.length,
             startTime: currentStart,
             duration: Math.max(0, getSampleEnd(last) - currentStart),
-            encodedBytes: currentBytes,
+            encodedBytes: currentBytes + segmentHeader,
             samples: currentSamples
         });
         currentSamples = [];
@@ -136,14 +160,14 @@ const buildSegmentPlan = (
     };
 
     for (const sample of samples) {
-        const frameBytes = sample.size + ADTS_HEADER_SIZE;
-        if (frameBytes > maxBytes) {
-            throw new UnsupportedMp4AudioError('An AAC frame exceeds the fast-path segment limit');
+        const frameBytes = sample.size + frameOverhead;
+        if (frameBytes + segmentHeader > maxBytes) {
+            throw new UnsupportedMp4AudioError('An audio sample exceeds the fast-path segment limit');
         }
 
         if (currentSamples.length === 0) currentStart = getSampleStart(sample);
         const wouldExceedDuration = getSampleEnd(sample) - currentStart > maxDuration;
-        const wouldExceedBytes = currentBytes + frameBytes > maxBytes;
+        const wouldExceedBytes = currentBytes + frameBytes + segmentHeader > maxBytes;
         if (currentSamples.length > 0 && (wouldExceedDuration || wouldExceedBytes)) {
             commit();
             currentStart = getSampleStart(sample);
@@ -158,13 +182,14 @@ const buildSegmentPlan = (
 };
 
 /**
- * Scan MP4 metadata without retaining mdat payloads, then build a byte-range plan
- * for the AAC-LC audio track. The scan reads local disk only; no media is uploaded.
+ * Read only MP4 top-level metadata, then build byte ranges for AAC-LC or
+ * camera Linear PCM audio. The large mdat video payload is skipped entirely.
  */
 export const analyzeMp4Audio = async (
     file: Blob,
     options: AnalyzeOptions = {}
 ): Promise<Mp4AudioPlan> => {
+    registerPcmSampleEntries();
     const parser = createFile(false);
     let info: Movie | null = null;
     let parserError: Error | null = null;
@@ -173,35 +198,36 @@ export const analyzeMp4Audio = async (
         info = movie;
     };
     parser.onError = (module, message) => {
-        parserError = new UnsupportedMp4AudioError(`${module}: ${message}`);
+        if (!info) parserError = new UnsupportedMp4AudioError(`${module}: ${message}`);
     };
 
-    for (let offset = 0; offset < file.size; offset += SCAN_CHUNK_SIZE) {
-        throwIfAborted(options.signal);
-        const end = Math.min(file.size, offset + SCAN_CHUNK_SIZE);
-        const buffer = await file.slice(offset, end).arrayBuffer() as unknown as MP4BoxBuffer;
-        buffer.fileStart = offset;
-        parser.appendBuffer(buffer, end === file.size);
-        if (parserError) throw parserError;
-        options.onProgress?.(Math.round((end / file.size) * 100));
-    }
-
-    parser.flush();
-    if (parserError) throw parserError;
+    throwIfAborted(options.signal);
+    options.onProgress?.(5);
+    const metadataBuffer = await readMp4MetadataBuffer(file);
+    throwIfAborted(options.signal);
+    parser.appendBuffer(metadataBuffer as MP4BoxBuffer, true);
+    options.onProgress?.(100);
+    if (parserError && !info) throw parserError;
     if (!info?.hasMoov) {
         throw new UnsupportedMp4AudioError('The MP4 metadata could not be read');
     }
 
     const track = info.audioTracks[0];
-    const { sampleRate, channelCount } = validateAacTrack(track);
-    const samples = parser.getTrackSamplesInfo(track.id)
+    if (!track) throw new UnsupportedMp4AudioError('The MP4 file does not contain an audio track');
+    const rawSamples = parser.getTrackSamplesInfo(track.id)
+        .filter((sample) => sample.size > 0 && sample.timescale > 0);
+    if (rawSamples.length === 0) {
+        throw new UnsupportedMp4AudioError('The audio track contains no readable samples');
+    }
+    const { audioFormat, sampleRate, channelCount, pcmConfig } = validateAudioTrack(track, rawSamples[0]);
+    if (pcmConfig && rawSamples.some((sample) => sample.size % pcmConfig.bytesPerSample !== 0)) {
+        throw new UnsupportedMp4AudioError('The PCM audio samples are not byte-aligned');
+    }
+    const samples = rawSamples
         .filter((sample) => sample.size > 0 && sample.timescale > 0)
         .map(copySampleIndex)
         .sort((a, b) => a.cts - b.cts || a.dts - b.dts);
 
-    if (samples.length === 0) {
-        throw new UnsupportedMp4AudioError('The AAC track contains no readable samples');
-    }
     for (const sample of samples) {
         if (!Number.isSafeInteger(sample.offset) || sample.offset < 0 || sample.offset + sample.size > file.size) {
             throw new UnsupportedMp4AudioError('The MP4 audio index contains an invalid byte range');
@@ -211,17 +237,22 @@ export const analyzeMp4Audio = async (
     const segments = buildSegmentPlan(
         samples,
         options.maxSegmentDurationSeconds || MAX_SEGMENT_DURATION_SECONDS,
-        options.maxSegmentBytes || MAX_SEGMENT_BYTES
+        options.maxSegmentBytes || MAX_SEGMENT_BYTES,
+        audioFormat
     );
     const lastSample = samples[samples.length - 1];
 
     return {
         codec: track.codec,
+        audioFormat,
+        fileExtension: audioFormat,
+        mimeType: audioFormat === 'aac' ? 'audio/aac' : 'audio/wav',
         sampleRate,
         channelCount,
         duration: getSampleEnd(lastSample),
         encodedBytes: segments.reduce((sum, segment) => sum + segment.encodedBytes, 0),
-        segments
+        segments,
+        pcmConfig
     };
 };
 
@@ -271,8 +302,42 @@ const buildReadRanges = (entries: SampleOutputEntry[]): ReadRange[] => {
     return ranges;
 };
 
-/** Build a standalone ADTS AAC file for one indexed segment. */
-export const buildAacSegment = async (
+const writeWavHeader = (target: Uint8Array, plan: Mp4AudioPlan, dataSize: number) => {
+    const pcm = plan.pcmConfig;
+    if (!pcm) throw new UnsupportedMp4AudioError('PCM configuration is missing');
+    const view = new DataView(target.buffer, target.byteOffset, WAV_HEADER_SIZE);
+    const writeText = (offset: number, value: string) => {
+        for (let index = 0; index < value.length; index++) target[offset + index] = value.charCodeAt(index);
+    };
+    const blockAlign = plan.channelCount * pcm.bytesPerSample;
+
+    writeText(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeText(8, 'WAVE');
+    writeText(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, pcm.wavFormat, true);
+    view.setUint16(22, plan.channelCount, true);
+    view.setUint32(24, plan.sampleRate, true);
+    view.setUint32(28, plan.sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, pcm.bitsPerSample, true);
+    writeText(36, 'data');
+    view.setUint32(40, dataSize, true);
+};
+
+const swapPcmEndian = (target: Uint8Array, start: number, size: number, bytesPerSample: number) => {
+    for (let offset = start; offset < start + size; offset += bytesPerSample) {
+        for (let left = 0, right = bytesPerSample - 1; left < right; left++, right--) {
+            const value = target[offset + left];
+            target[offset + left] = target[offset + right];
+            target[offset + right] = value;
+        }
+    }
+};
+
+/** Build a standalone ADTS AAC or WAV file for one indexed audio segment. */
+export const buildAudioSegment = async (
     file: Blob,
     plan: Mp4AudioPlan,
     segment: AacSegmentIndex,
@@ -280,12 +345,19 @@ export const buildAacSegment = async (
 ): Promise<Blob> => {
     const output = new Uint8Array(segment.encodedBytes);
     const entries: SampleOutputEntry[] = [];
-    let outputOffset = 0;
+    let outputOffset = plan.audioFormat === 'wav' ? WAV_HEADER_SIZE : 0;
+
+    if (plan.audioFormat === 'wav') writeWavHeader(output, plan, segment.encodedBytes - WAV_HEADER_SIZE);
 
     for (const sample of segment.samples) {
-        entries.push({ sample, outputOffset });
-        writeAdtsHeader(output, outputOffset, sample.size, plan.sampleRate, plan.channelCount);
-        outputOffset += ADTS_HEADER_SIZE + sample.size;
+        if (plan.audioFormat === 'aac') {
+            writeAdtsHeader(output, outputOffset, sample.size, plan.sampleRate, plan.channelCount);
+            entries.push({ sample, payloadOffset: outputOffset + ADTS_HEADER_SIZE });
+            outputOffset += ADTS_HEADER_SIZE + sample.size;
+        } else {
+            entries.push({ sample, payloadOffset: outputOffset });
+            outputOffset += sample.size;
+        }
     }
 
     const ranges = buildReadRanges(entries);
@@ -299,12 +371,15 @@ export const buildAacSegment = async (
             const sourceOffset = entry.sample.offset - range.start;
             output.set(
                 source.subarray(sourceOffset, sourceOffset + entry.sample.size),
-                entry.outputOffset + ADTS_HEADER_SIZE
+                entry.payloadOffset
             );
+            if (plan.audioFormat === 'wav' && plan.pcmConfig && !plan.pcmConfig.sourceLittleEndian) {
+                swapPcmEndian(output, entry.payloadOffset, entry.sample.size, plan.pcmConfig.bytesPerSample);
+            }
         }
         readBytes += range.end - range.start;
         options.onProgress?.(totalReadBytes > 0 ? Math.round((readBytes / totalReadBytes) * 100) : 100);
     }
 
-    return new Blob([output], { type: 'audio/aac' });
+    return new Blob([output], { type: plan.mimeType });
 };

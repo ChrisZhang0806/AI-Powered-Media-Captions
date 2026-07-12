@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
-import { CaptionSegment, CaptionMode, SegmentStyle, ProgressInfo } from '../types';
+import { CaptionSegment, SegmentStyle, ProgressInfo } from '../types';
 import { Language, getTranslation } from '../utils/i18n';
+import { UserFacingError } from '../utils/userFacingError';
 
 const openai = new OpenAI({
     apiKey: import.meta.env.VITE_OPENAI_API_KEY || 'dummy_key_for_init',
@@ -75,9 +76,7 @@ const transcribeSegment = async (
  */
 export const generateCaptionsStream = async (
     file: File,
-    targetLanguage: string = 'English',
-    mode: CaptionMode = 'Original',
-    segmentStyle: SegmentStyle = 'natural',
+    segmentStyle: SegmentStyle,
     onChunk: (segments: CaptionSegment[]) => void,
     onProgress?: (info: ProgressInfo) => void,
     userApiKey?: string,
@@ -93,18 +92,16 @@ export const generateCaptionsStream = async (
     if (isSmallAudioFile) {
         onProgress?.({
             stage: 'transcribing',
-            stageLabel: t.prepUpload,
-            progress: 20,
-            detail: uiLanguage === 'zh' ? '小文件无需分割，直接处理' : 'Small file, direct process'
+            stageLabel: t.progressPreparing,
+            progress: 20
         });
 
         // Simulate progress updates (Whisper API doesn't provide real-time stream)
         const progressInterval = setInterval(() => {
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: t.aiRecognizing,
-                progress: Math.min(80, 30 + Math.random() * 40),
-                detail: t.analyzing
+                stageLabel: t.progressTranscribing,
+                progress: Math.min(80, 30 + Math.random() * 40)
             });
         }, 1500);
 
@@ -114,9 +111,9 @@ export const generateCaptionsStream = async (
 
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: t.organizing,
+                stageLabel: t.progressFinalizing,
                 progress: 90,
-                detail: t.capturedInfo.replace('{count}', whisperSegments.length.toString())
+                detail: t.progressGenerated.replace('{count}', whisperSegments.length.toString())
             });
 
             const captions: CaptionSegment[] = whisperSegments.map((seg, i) => ({
@@ -128,32 +125,11 @@ export const generateCaptionsStream = async (
 
             onChunk(captions);
 
-            // Translation processing
-            if (mode !== 'Original' && captions.length > 0) {
-                onProgress?.({
-                    stage: 'translating',
-                    stageLabel: t.translating,
-                    progress: 70,
-                    detail: `${t.translating} ${targetLanguage}`
-                });
-
-                const translated = await translateSegments(captions, targetLanguage, 0.5, undefined, userApiKey, uiLanguage);
-                if (mode === 'Translation') {
-                    onChunk(translated);
-                } else {
-                    const bilingual = captions.map((cap, i) => ({
-                        ...cap,
-                        text: `${cap.text}\n${translated[i]?.text || ''}`
-                    }));
-                    onChunk(bilingual);
-                }
-            }
-
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: t.done,
+                stageLabel: t.progressDone,
                 progress: 100,
-                detail: t.capturedInfo.replace('{count}', captions.length.toString())
+                detail: t.progressGenerated.replace('{count}', captions.length.toString())
             });
             return;
         } catch (error) {
@@ -165,9 +141,8 @@ export const generateCaptionsStream = async (
     // Process for large files
     onProgress?.({
         stage: 'segmenting',
-        stageLabel: t.preparingEngine,
-        progress: 0,
-        detail: t.readyForSegment
+        stageLabel: t.progressPreparing,
+        progress: 0
     });
 
     const allCaptions: CaptionSegment[] = [];
@@ -203,9 +178,8 @@ export const generateCaptionsStream = async (
     if (isVideoFile(file)) {
         onProgress?.({
             stage: 'extracting_audio',
-            stageLabel: t.extractingAudio,
-            progress: 5,
-            detail: t.timeWait
+            stageLabel: t.progressExtracting,
+            progress: 5
         });
 
         try {
@@ -213,15 +187,14 @@ export const generateCaptionsStream = async (
                 const overallProgress = 5 + Math.round(p * 0.3);
                 onProgress?.({
                     stage: 'extracting_audio',
-                    stageLabel: t.extractingAudio,
-                    progress: overallProgress,
-                    detail: t.extractingDetails
+                    stageLabel: t.progressExtracting,
+                    progress: overallProgress
                 });
             });
             console.log('[Captions] Audio extraction complete, size:', (audioSource.size / 1024 / 1024).toFixed(2), 'MB');
         } catch (error) {
             console.error('[Captions] Audio extraction failed:', error);
-            throw new Error(uiLanguage === 'zh' ? '视频音频提取失败，请检查视频文件格式' : 'Video audio extraction failed, please check file format');
+            throw new UserFacingError(t.errorAudioExtract);
         }
     }
 
@@ -240,9 +213,9 @@ export const generateCaptionsStream = async (
                 try {
                     onProgress?.({
                         stage: 'transcribing',
-                        stageLabel: t.transcribing,
+                        stageLabel: t.progressTranscribing,
                         progress: Math.min(99, Math.round((completedCount / (segmentCount || 1)) * 100)),
-                        detail: t.segmentInfo.replace('{index}', (currentSegmentIndex + 1).toString())
+                        detail: t.progressSegmentDetail.replace('{index}', (currentSegmentIndex + 1).toString())
                     });
 
                     const whisperSegments = await transcribeSegment(blob, undefined, segmentStyle, userApiKey);
@@ -254,26 +227,7 @@ export const generateCaptionsStream = async (
                         text: seg.text.trim()
                     }));
 
-                    const currentFullList = addAndSortCaptions(newCaptions);
-
-                    // 3. Real-time translation (if requested)
-                    if (mode !== 'Original' && newCaptions.length > 0) {
-                        const translated = await translateSegments(newCaptions, targetLanguage, 0.5, undefined, userApiKey, uiLanguage);
-
-                        // Update items in the full list
-                        const finalBilingual = currentFullList.map(cap => {
-                            const t = translated.find(tr => tr.startTime === cap.startTime);
-                            if (!t) return cap;
-
-                            if (mode === 'Translation') {
-                                return { ...cap, text: t.text };
-                            } else {
-                                // Prevent duplicate appendage
-                                return { ...cap, text: `${cap.text}\n${t.text}` };
-                            }
-                        });
-                        onChunk(finalBilingual);
-                    }
+                    addAndSortCaptions(newCaptions);
 
                     completedCount++;
                 } catch (error) {
@@ -292,9 +246,8 @@ export const generateCaptionsStream = async (
             // Feedback low-level segmentation progress to UI
             onProgress?.({
                 stage: 'segmenting',
-                stageLabel: info.stageLabel,
-                progress: info.progress,
-                detail: uiLanguage === 'zh' ? '正在准备音轨...' : 'Preparing audio tracks...'
+                stageLabel: t.progressSegmenting,
+                progress: info.progress
             });
         }
     );
@@ -304,30 +257,10 @@ export const generateCaptionsStream = async (
 
     onProgress?.({
         stage: 'transcribing',
-        stageLabel: t.done,
+        stageLabel: t.progressDone,
         progress: 100,
-        detail: t.capturedInfo.replace('{count}', allCaptions.length.toString())
+        detail: t.progressGenerated.replace('{count}', allCaptions.length.toString())
     });
-};
-
-/**
- * Detect source language of the captions
- */
-const detectSourceLanguage = (segments: CaptionSegment[]): string => {
-    const text = segments.map(s => s.text).join(' ');
-
-    // Detect character types
-    const chineseChars = text.match(/[\u4e00-\u9fff]/g) || [];
-    const japaneseChars = text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || [];
-    const koreanChars = text.match(/[\uac00-\ud7af]/g) || [];
-
-    const totalChars = text.length;
-
-    if (chineseChars.length / totalChars > 0.1) return 'Chinese';
-    if (japaneseChars.length / totalChars > 0.1) return 'Japanese';
-    if (koreanChars.length / totalChars > 0.1) return 'Korean';
-
-    return 'English';
 };
 
 /**
@@ -337,104 +270,6 @@ const parseTimestamp = (timestamp: string): number => {
     const [time, ms] = timestamp.split(',');
     const [h, m, s] = time.split(':').map(Number);
     return h * 3600 + m * 60 + s + parseInt(ms) / 1000;
-};
-
-/**
- * Translate subtitle segments (supporting batching and 1:1 alignment)
- */
-export const translateSegments = async (
-    segments: CaptionSegment[],
-    targetLanguage: string,
-    styleValue: number = 0.5,
-    onChunk?: (translatedSegments: CaptionSegment[]) => void,
-    userApiKey?: string,
-    uiLanguage: Language = 'en'
-): Promise<CaptionSegment[]> => {
-    if (segments.length === 0) return [];
-
-    // Map styleValue (0-1) to 0-100 strength
-    const styleStrength = Math.round(styleValue * 100);
-
-    let styleDesc = "";
-    if (styleStrength <= 33) {
-        // LITERAL - 直译
-        styleDesc = "Literal and precise. Maintain the original sentence structure as much as possible.";
-    } else if (styleStrength <= 66) {
-        // BALANCED - 平衡
-        styleDesc = "Balanced. Natural sounding in the target language while remaining faithful to the original meaning.";
-    } else {
-        // CREATIVE - 创意/意译
-        styleDesc = "Creative and Stylized. Localize idioms, prioritize emotional impact and flow over word-for-word accuracy. Use slang if appropriate for the context.";
-    }
-
-    // Detect source language
-    const sourceLang = detectSourceLanguage(segments);
-
-    const translatedSegments = [...segments];
-    const BATCH_SIZE = 5;
-    const totalBatches = Math.ceil(segments.length / BATCH_SIZE);
-
-    const translateBatch = async (batchIndex: number) => {
-        const start = batchIndex * BATCH_SIZE;
-        const end = Math.min(start + BATCH_SIZE, segments.length);
-        const batch = segments.slice(start, end);
-
-        // Use JSON structure for clarity
-        const inputData = batch.map((s, idx) => ({ id: idx, text: s.text }));
-        const client = getClient(userApiKey);
-
-        try {
-            const response = await client.chat.completions.create({
-                model: 'gpt-4o',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `You are an expert subtitle translator specialized in converting ${sourceLang} content to ${targetLanguage}.
-
-Your goal is to translate the provided subtitle blocks according to this style guide: "${styleDesc}".
-
-- Preserve line breaks within the text if they make semantic sense.
-- Do not merge separate subtitle blocks.
-- Return the result strictly as a JSON object with a "translations" array where each object contains the 'id' (matching input) and 'text' (translated text).`
-                    },
-                    {
-                        role: 'user',
-                        content: `Translate these subtitles:\n${JSON.stringify(inputData)}`
-                    }
-                ],
-                response_format: { type: "json_object" }
-            });
-
-            const content = response.choices[0]?.message?.content || '{"translations":[]}';
-            const parsed = JSON.parse(content);
-            const translations = parsed.translations || [];
-
-            batch.forEach((seg, i) => {
-                const match = translations.find((r: any) => r.id === i);
-                const translatedText = match ? match.text.trim() : seg.text;
-
-                const globalIndex = start + i;
-                translatedSegments[globalIndex] = {
-                    ...seg,
-                    text: translatedText
-                };
-            });
-
-            onChunk?.([...translatedSegments]);
-        } catch (err) {
-            console.error('Batch translation error:', err);
-            throw err; // Re-throw to be caught by UI
-        }
-    };
-
-    const tasks = [];
-    for (let i = 0; i < totalBatches; i++) {
-        tasks.push(translateBatch(i));
-        if (i % 3 === 0) await new Promise(r => setTimeout(r, 100));
-    }
-
-    await Promise.all(tasks);
-    return translatedSegments;
 };
 
 /**

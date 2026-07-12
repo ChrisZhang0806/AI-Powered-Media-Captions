@@ -6,6 +6,7 @@ interface StartUploadMessage {
     uploadToken: string;
     chunkSize: number;
     totalChunks: number;
+    receivedChunks: number[];
     concurrency: number;
 }
 
@@ -23,7 +24,7 @@ let lastProgressPostAt = 0;
 const postProgress = (loaded: number, total: number, force = false) => {
     highestReportedBytes = Math.max(highestReportedBytes, loaded);
     const now = Date.now();
-    if (!force && now - lastProgressPostAt < 100) return;
+    if (!force && now - lastProgressPostAt < 250) return;
     lastProgressPostAt = now;
     self.postMessage({
         type: 'progress',
@@ -104,9 +105,25 @@ const runUpload = async (message: StartUploadMessage) => {
     cancelled = false;
     highestReportedBytes = 0;
     lastProgressPostAt = 0;
-    let nextChunk = 0;
-    let completedBytes = 0;
+    const alreadyReceived = new Set(
+        (message.receivedChunks || [])
+            .filter((value) => Number.isInteger(value) && value >= 0 && value < message.totalChunks)
+    );
+    const chunkOrder: number[] = [];
+    const lastChunk = message.totalChunks - 1;
+    if (!alreadyReceived.has(0)) chunkOrder.push(0);
+    if (lastChunk > 0 && !alreadyReceived.has(lastChunk)) chunkOrder.push(lastChunk);
+    for (let chunkIndex = 1; chunkIndex < lastChunk; chunkIndex++) {
+        if (!alreadyReceived.has(chunkIndex)) chunkOrder.push(chunkIndex);
+    }
+
+    let nextOrderIndex = 0;
+    let completedBytes = [...alreadyReceived].reduce((total, chunkIndex) => {
+        const start = chunkIndex * message.chunkSize;
+        return total + Math.min(message.chunkSize, message.file.size - start);
+    }, 0);
     const inFlightBytes = new Map<number, number>();
+    postProgress(completedBytes, message.file.size, true);
 
     const uploadWithRetry = async (chunkIndex: number) => {
         const maxAttempts = 4;
@@ -141,8 +158,8 @@ const runUpload = async (message: StartUploadMessage) => {
 
     const runner = async () => {
         while (!cancelled) {
-            const chunkIndex = nextChunk++;
-            if (chunkIndex >= message.totalChunks) return;
+            const chunkIndex = chunkOrder[nextOrderIndex++];
+            if (chunkIndex === undefined) return;
             await uploadWithRetry(chunkIndex);
         }
     };

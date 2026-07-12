@@ -2,16 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Material Symbols Outlined";
+  src: url("/fonts/material-symbols-outlined.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "AvenirNextCyr";
+  src: local("AvenirNextCyr-Regular"), local("Avenir Next Cyr Regular");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AvenirNextCyr";
+  src: local("AvenirNextCyr-Medium"), local("Avenir Next Cyr Medium");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AvenirNextCyr";
+  src: local("AvenirNextCyr-Demi"), local("Avenir Next Cyr Demi");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AvenirNextCyr";
+  src: local("AvenirNextCyr-Bold"), local("Avenir Next Cyr Bold");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AvenirNextCyr";
+  src: local("AvenirNextCyr-Heavy"), local("Avenir Next Cyr Heavy");
+  font-style: normal;
+  font-weight: 800 900;
+  font-display: swap;
+}
+
 :root {
-  color-scheme: light dark;
-  --app-focus: rgba(0, 113, 227, 0.42);
-  --app-border: rgba(24, 24, 27, 0.1);
-  --app-surface: rgba(255, 255, 255, 0.78);
-  --app-surface-strong: rgba(255, 255, 255, 0.92);
-  --app-muted-surface: rgba(24, 24, 27, 0.045);
-  --app-text: #1d1d1f;
-  --app-text-secondary: #6e6e73;
-  --app-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  color-scheme: light;
+  --app-background: #fdf8fd;
+  --app-surface: #f7f2f8;
+  --app-surface-strong: #ffffff;
+  --app-surface-container: #f1ecf2;
+  --app-surface-container-high: #ebe7ec;
+  --app-surface-container-highest: #e5e1e7;
+  --app-text: #1c1b1f;
+  --app-text-secondary: #494551;
+  --app-outline: #7a7582;
+  --app-outline-variant: #cbc4d2;
+  --app-primary: #4f378a;
+  --app-primary-container: #6750a4;
+  --app-on-primary: #ffffff;
+  --app-focus: rgba(79, 55, 138, 0.38);
+  --app-border: #cbc4d2;
+  --app-shadow: 0 1px 3px rgba(49, 48, 52, 0.12), 0 1px 2px rgba(49, 48, 52, 0.08);
   --app-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -23,12 +79,14 @@ html,
 body,
 #root {
   min-height: 100%;
+  font-family: "AvenirNextCyr", "Avenir Next Cyr", "Avenir Next", "PingFang SC", sans-serif;
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-  background: linear-gradient(180deg, #fbfbfd 0%, #f4f6f9 52%, #eef1f6 100%);
+  font-family: "AvenirNextCyr", "Avenir Next Cyr", "Avenir Next", "PingFang SC", sans-serif;
+  letter-spacing: 0;
+  background: var(--app-background);
   color: var(--app-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -39,6 +97,26 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+.material-symbols-outlined {
+  display: inline-block;
+  flex: none;
+  overflow: hidden;
+  width: 1em;
+  height: 1em;
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: "liga";
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
@@ -57,47 +135,40 @@ textarea {
   -webkit-app-region: drag;
 }
 
-.app-titlebar-content {
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-@media (min-width: 640px) {
-  .app-titlebar-content {
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
-  }
-}
-
-@media (min-width: 768px) {
-  .app-titlebar-content {
-    padding-left: 5.25rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .app-titlebar-content {
-    padding-right: 2rem;
-  }
-}
-
 .app-shell {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 247, 250, 0.74)),
-    linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(48, 209, 88, 0.06));
+  background: var(--app-background);
 }
 
-.app-panel,
-.app-popover {
+.app-panel {
   background: var(--app-surface);
-  border: 1px solid var(--app-border);
+}
+
+.panel-elevated {
   box-shadow: var(--app-shadow);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
 }
 
 .app-popover {
-  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.16);
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-outline-variant);
+  box-shadow: 0 12px 32px rgba(49, 48, 52, 0.16);
+}
+
+.md3-dialog {
+  box-shadow: 0 24px 48px rgba(28, 27, 31, 0.2), 0 8px 20px rgba(28, 27, 31, 0.14);
+}
+
+.md3-outlined-field {
+  transition: border-color 160ms var(--app-ease), box-shadow 160ms var(--app-ease);
+}
+
+.md3-outlined-field:focus-within {
+  border-color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px var(--app-primary);
+}
+
+.md3-outlined-field[data-invalid="true"]:focus-within {
+  border-color: #ba1a1a;
+  box-shadow: inset 0 0 0 1px #ba1a1a;
 }
 
 .subtitle-toolbar {
@@ -117,47 +188,29 @@ textarea {
 }
 
 .subtitle-toolbar-actions {
-  display: grid;
+  display: flex;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 0.5rem;
+  justify-content: flex-start;
 }
 
-.subtitle-toolbar-languages,
-.subtitle-toolbar-style,
-.subtitle-toolbar-translate,
 .subtitle-toolbar-export {
   min-width: 0;
   width: 100%;
 }
 
 @container subtitle-toolbar (min-width: 34rem) {
-  .subtitle-toolbar-actions {
-    grid-template-columns: minmax(11.25rem, 0.9fr) minmax(13.125rem, 1.1fr);
+  .subtitle-toolbar-layout {
+    grid-template-columns: minmax(0, 1fr) max-content;
   }
 
-  .subtitle-toolbar-translate {
-    width: auto;
-    justify-self: start;
+  .subtitle-toolbar-actions {
+    justify-content: flex-end;
   }
 
   .subtitle-toolbar-export {
     width: auto;
-    justify-self: end;
-  }
-}
-
-@container subtitle-toolbar (min-width: 43rem) {
-  .subtitle-toolbar-actions {
-    grid-template-columns: 11.25rem 13.125rem max-content minmax(7.25rem, 1fr);
-  }
-}
-
-@container subtitle-toolbar (min-width: 68rem) {
-  .subtitle-toolbar-layout {
-    grid-template-columns: minmax(0, 1fr) 40rem;
-    gap: 1rem;
+    min-width: 9rem;
   }
 }
 
@@ -173,11 +226,11 @@ textarea {
 
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.38) transparent;
+  scrollbar-color: var(--app-outline-variant) transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 10px;
+  width: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -185,10 +238,8 @@ textarea {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(113, 113, 122, 0.32);
-  border: 3px solid transparent;
+  background: var(--app-outline-variant);
   border-radius: 999px;
-  background-clip: content-box;
 }
 
 .media-chrome video {
@@ -241,34 +292,5 @@ textarea {
   .app-panel,
   .app-popover {
     background: var(--app-surface-strong);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --app-border: rgba(244, 244, 245, 0.12);
-    --app-surface: rgba(24, 24, 27, 0.82);
-    --app-surface-strong: rgba(24, 24, 27, 0.96);
-    --app-muted-surface: rgba(255, 255, 255, 0.08);
-    --app-text: #f5f5f7;
-    --app-text-secondary: #a1a1a6;
-    --app-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
-  }
-
-  body {
-    background: linear-gradient(180deg, #09090b 0%, #111114 52%, #18181b 100%);
-  }
-
-  .app-shell {
-    background:
-      linear-gradient(180deg, rgba(9, 9, 11, 0.94), rgba(24, 24, 27, 0.9)),
-      linear-gradient(135deg, rgba(10, 132, 255, 0.1), rgba(48, 209, 88, 0.06));
-  }
-
-  .app-panel,
-  .app-popover {
-    background: var(--app-surface);
   }
 }

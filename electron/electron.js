@@ -136,7 +136,7 @@ app.whenReady().then(async () => {
 
         createWindow();
     } catch (err) {
-        dialog.showErrorBox('启动失败', err.message);
+        dialog.showErrorBox('无法启动应用', '应用服务未能启动。请重新打开应用后重试。');
         app.quit();
     }
 });

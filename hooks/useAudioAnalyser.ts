@@ -56,8 +56,8 @@ export const useAudioAnalyser = ({ mediaRef, canvasRef, isAudio }: UseAudioAnaly
 
                 // 渐变色
                 const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
-                gradient.addColorStop(0, '#71717a'); // primary-500
-                gradient.addColorStop(1, '#27272a'); // primary-600
+                gradient.addColorStop(0, '#cfbcff');
+                gradient.addColorStop(1, '#4f378a');
 
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
