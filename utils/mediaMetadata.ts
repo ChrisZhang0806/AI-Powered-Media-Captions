@@ -5,13 +5,14 @@ import { registerPcmSampleEntries } from './mp4PcmSupport';
 const MAX_TOP_LEVEL_BOXES = 10_000;
 const MAX_METADATA_BOX_SIZE = 128 * 1024 * 1024;
 
-interface BoxLocation {
+export interface Mp4BoxLocation {
     offset: number;
     size: number;
+    headerSize: number;
     type: string;
 }
 
-const readBoxHeader = async (file: Blob, offset: number): Promise<BoxLocation | null> => {
+const readBoxHeader = async (file: Blob, offset: number): Promise<Mp4BoxLocation | null> => {
     const header = new Uint8Array(await file.slice(offset, Math.min(file.size, offset + 16)).arrayBuffer());
     if (header.byteLength < 8) return null;
 
@@ -31,11 +32,11 @@ const readBoxHeader = async (file: Blob, offset: number): Promise<BoxLocation | 
     }
 
     if (!Number.isSafeInteger(size) || size < headerSize || offset + size > file.size) return null;
-    return { offset, size, type };
+    return { offset, size, headerSize, type };
 };
 
-const findMetadataBoxes = async (file: Blob): Promise<BoxLocation[]> => {
-    const boxes: BoxLocation[] = [];
+export const findMp4MetadataBoxes = async (file: Blob): Promise<Mp4BoxLocation[]> => {
+    const boxes: Mp4BoxLocation[] = [];
     let offset = 0;
 
     for (let index = 0; index < MAX_TOP_LEVEL_BOXES && offset < file.size; index++) {
@@ -50,7 +51,7 @@ const findMetadataBoxes = async (file: Blob): Promise<BoxLocation[]> => {
 };
 
 export const readMp4MetadataBuffer = async (file: Blob): Promise<MP4BoxBuffer> => {
-    const boxes = await findMetadataBoxes(file);
+    const boxes = await findMp4MetadataBoxes(file);
     if (!boxes.some((box) => box.type === 'ftyp')) throw new Error('MP4 file type box was not found');
     if (!boxes.some((box) => box.type === 'moov')) throw new Error('MP4 metadata box was not found');
     const metadataParts: Uint8Array[] = [];
@@ -74,6 +75,22 @@ export const readMp4MetadataBuffer = async (file: Blob): Promise<MP4BoxBuffer> =
     const buffer = combined.buffer as MP4BoxBuffer;
     buffer.fileStart = 0;
     return buffer;
+};
+
+export const readMp4BoxBuffer = async (
+    file: Blob,
+    type: 'ftyp' | 'moov'
+): Promise<{ location: Mp4BoxLocation; buffer: MP4BoxBuffer }> => {
+    const boxes = await findMp4MetadataBoxes(file);
+    const location = boxes.find((box) => box.type === type);
+    if (!location) throw new Error(`MP4 ${type} box was not found`);
+    if (location.size > MAX_METADATA_BOX_SIZE) {
+        throw new Error(`MP4 ${type} box is too large to inspect safely`);
+    }
+
+    const buffer = await file.slice(location.offset, location.offset + location.size).arrayBuffer() as MP4BoxBuffer;
+    buffer.fileStart = location.offset;
+    return { location, buffer };
 };
 
 const parseMetadata = async (file: Blob): Promise<Movie> => {

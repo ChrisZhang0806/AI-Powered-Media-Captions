@@ -13,6 +13,7 @@ const iconsetDir = path.join(packageDir, 'AppIcon.iconset');
 const appiconsetDir = path.join(packageDir, 'AppIcon.appiconset');
 const layersDir = path.join(packageDir, 'IconComposer-layers');
 const zipPath = path.join(assetRoot, 'AI-Media-Captions-macOS-Icon-Pack.zip');
+const publicRoot = path.join(projectRoot, 'public');
 const publicIcns = path.join(projectRoot, 'public', 'icon.icns');
 const appBuilderBinary = path.join(
   projectRoot,
@@ -189,6 +190,10 @@ run(appBuilderBinary, [
 await copyFile(path.join(icnsBuildDir, 'icon.icns'), icnsPath);
 await rm(icnsBuildDir, { recursive: true, force: true });
 await copyFile(icnsPath, publicIcns);
+await writeFile(path.join(publicRoot, 'icon.png'), master);
+await resizeIcon(legacyMaster, path.join(publicRoot, 'favicon-16.png'), 16);
+await resizeIcon(legacyMaster, path.join(publicRoot, 'favicon-32.png'), 32);
+await resizeIcon(master, path.join(publicRoot, 'apple-touch-icon.png'), 180);
 
 const sourceCopy = path.join(packageDir, 'Source-1254.png');
 await copyFile(sourcePath, sourceCopy);

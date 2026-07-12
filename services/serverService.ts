@@ -5,6 +5,8 @@ import { UserFacingError } from '../utils/userFacingError';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 const UPLOAD_CONCURRENCY = 2;
 const UPLOAD_SESSION_PREFIX = 'caption_upload_session_v2:';
+const MAX_FULL_VIDEO_UPLOAD_BYTES = 256 * 1024 * 1024;
+const VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'ts', 'mts', 'm2ts']);
 const USER_CANCEL_REASON = { cancelServerTask: true } as const;
 
 export const cancelServerTranscription = (controller: AbortController | null | undefined) => {
@@ -53,6 +55,11 @@ const formatFileSize = (bytes: number): string => {
         return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
     }
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const isVideoFile = (file: File): boolean => {
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    return file.type.startsWith('video/') || VIDEO_EXTENSIONS.has(extension);
 };
 
 const hashString = (value: string): string => {
@@ -494,6 +501,24 @@ export const transcribeWithServer = async (
     };
 
     try {
+        const { transcribeMp4AudioFastPath } = await import('./mp4AudioService');
+        const usedAudioOnlyUpload = await transcribeMp4AudioFastPath(
+            file,
+            segmentStyle,
+            contextPrompt,
+            onChunk,
+            reportProgress,
+            apiKey,
+            uiLanguage,
+            signal
+        );
+        if (usedAudioOnlyUpload) return;
+        if (isVideoFile(file) && file.size > MAX_FULL_VIDEO_UPLOAD_BYTES) {
+            throw new UserFacingError(
+                t.errorFastPathFormat.replace('{size}', formatFileSize(file.size))
+            );
+        }
+
         reportProgress({
             stage: 'uploading',
             stageLabel: t.progressUploading,

@@ -1,16 +1,43 @@
 import type { CaptionSegment, ProgressInfo, SegmentStyle } from '../types';
 import { Language, getTranslation } from '../utils/i18n';
 import { UserFacingError } from '../utils/userFacingError';
-import {
-    analyzeMp4Audio,
-    buildAudioSegment,
-    UnsupportedMp4AudioError
-} from '../utils/mp4AudioDemux';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
-const FAST_PATH_CONCURRENCY = 3;
+const FAST_PATH_CONCURRENCY = 2;
 const FAST_PATH_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov']);
 const MAX_SILENT_FULL_UPLOAD_BYTES = 256 * 1024 * 1024;
+
+interface AudioSegmentSummary {
+    index: number;
+    startTime: number;
+    duration: number;
+    encodedBytes: number;
+    sampleStart: number;
+    sampleEnd: number;
+}
+
+interface AudioPlanSummary {
+    codec: string;
+    audioFormat: 'aac' | 'wav';
+    fileExtension: 'aac' | 'wav';
+    mimeType: 'audio/aac' | 'audio/wav';
+    sampleRate: number;
+    channelCount: number;
+    duration: number;
+    encodedBytes: number;
+    segments: AudioSegmentSummary[];
+}
+
+interface BuiltAudioSegment {
+    blob: Blob;
+    startTime: number;
+    encodedBytes: number;
+    fileExtension: 'aac' | 'wav';
+}
+
+interface SegmentResponse {
+    captions?: CaptionSegment[];
+}
 
 class FastPathEndpointUnavailableError extends Error {
     constructor() {
@@ -19,8 +46,14 @@ class FastPathEndpointUnavailableError extends Error {
     }
 }
 
-interface SegmentResponse {
-    captions?: CaptionSegment[];
+class AudioExtractionWorkerError extends Error {
+    unsupported: boolean;
+
+    constructor(message: string, unsupported = false) {
+        super(message);
+        this.name = 'AudioExtractionWorkerError';
+        this.unsupported = unsupported;
+    }
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -55,7 +88,9 @@ const readResponseError = async (response: Response, uiLanguage: Language): Prom
         const body = await response.json();
         const message = typeof body.error === 'string' ? body.error : '';
         const containsChinese = /[\u3400-\u9fff]/.test(message);
-        if ((uiLanguage === 'en' && containsChinese) || (uiLanguage === 'zh' && !containsChinese)) return new UserFacingError(fallback);
+        if ((uiLanguage === 'en' && containsChinese) || (uiLanguage === 'zh' && !containsChinese)) {
+            return new UserFacingError(fallback);
+        }
         return new UserFacingError(message || fallback);
     } catch {
         return new UserFacingError(fallback);
@@ -93,9 +128,99 @@ const createProtectedFallbackError = (
     return new UserFacingError(template.replace('{size}', formatFileSize(file.size)));
 };
 
+const createAudioWorker = (
+    file: File,
+    onAnalysisProgress: (progress: number) => void,
+    signal?: AbortSignal
+) => {
+    const worker = new Worker(new URL('./mp4Audio.worker.ts', import.meta.url), { type: 'module' });
+    const pendingSegments = new Map<number, {
+        resolve: (segment: BuiltAudioSegment) => void;
+        reject: (error: Error) => void;
+    }>();
+    let closed = false;
+    let resolvePlan!: (plan: AudioPlanSummary) => void;
+    let rejectPlan!: (error: Error) => void;
+    const plan = new Promise<AudioPlanSummary>((resolve, reject) => {
+        resolvePlan = resolve;
+        rejectPlan = reject;
+    });
+    void plan.catch(() => undefined);
+
+    const toAbortError = () => signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException('Audio extraction cancelled', 'AbortError');
+
+    const close = (error?: Error) => {
+        if (closed) return;
+        closed = true;
+        signal?.removeEventListener('abort', handleAbort);
+        worker.terminate();
+        if (error) {
+            rejectPlan(error);
+            pendingSegments.forEach(({ reject }) => reject(error));
+            pendingSegments.clear();
+        }
+    };
+    const handleAbort = () => close(toAbortError());
+
+    worker.onmessage = (event: MessageEvent) => {
+        const message = event.data;
+        if (message.type === 'analysis-progress') {
+            onAnalysisProgress(Number(message.progress) || 0);
+            return;
+        }
+        if (message.type === 'ready') {
+            resolvePlan(message.plan as AudioPlanSummary);
+            return;
+        }
+        if (message.type === 'segment') {
+            const pending = pendingSegments.get(message.segmentIndex);
+            if (!pending) return;
+            pendingSegments.delete(message.segmentIndex);
+            pending.resolve({
+                blob: new Blob([message.buffer], { type: message.mimeType }),
+                startTime: Number(message.startTime),
+                encodedBytes: Number(message.encodedBytes),
+                fileExtension: message.fileExtension
+            });
+            return;
+        }
+        if (message.type === 'error') {
+            const error = new AudioExtractionWorkerError(message.message, Boolean(message.unsupported));
+            if (message.phase === 'analyze') {
+                close(error);
+            } else {
+                const pending = pendingSegments.get(message.segmentIndex);
+                pendingSegments.delete(message.segmentIndex);
+                pending?.reject(error);
+            }
+        }
+    };
+    worker.onerror = () => close(new AudioExtractionWorkerError('The browser could not extract the MP4 audio track'));
+
+    if (signal?.aborted) handleAbort();
+    else signal?.addEventListener('abort', handleAbort, { once: true });
+    if (!closed) worker.postMessage({ type: 'analyze', file });
+
+    return {
+        plan,
+        buildSegment: (segmentIndex: number) => new Promise<BuiltAudioSegment>((resolve, reject) => {
+            if (closed) {
+                reject(toAbortError());
+                return;
+            }
+            pendingSegments.set(segmentIndex, { resolve, reject });
+            worker.postMessage({ type: 'build', segmentIndex });
+        }),
+        close: () => close()
+    };
+};
+
 /**
- * Upload only the audio track from a local MP4-family file. Each request is
- * stateless, so Cloud Run can route segments to different instances safely.
+ * Extract and upload only AAC-LC or camera PCM audio. MP4 table expansion and
+ * segment assembly stay inside a bounded worker, so large video never enters
+ * the main-thread heap and video bytes never cross the network.
  */
 export const transcribeMp4AudioFastPath = async (
     file: File,
@@ -119,28 +244,24 @@ export const transcribeMp4AudioFastPath = async (
     if (!endpointAvailable) {
         signal?.removeEventListener('abort', forwardAbort);
         if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
-            throw createProtectedFallbackError(
-                file,
-                uiLanguage,
-                'service'
-            );
+            throw createProtectedFallbackError(file, uiLanguage, 'service');
         }
         return false;
     }
 
-    let plan;
+    const audioWorker = createAudioWorker(file, (progress) => onProgress?.({
+        stage: 'extracting_audio',
+        stageLabel: t.progressExtracting,
+        progress: Math.max(1, Math.round(progress * 0.1))
+    }), internalController.signal);
+
+    let plan: AudioPlanSummary;
     try {
-        plan = await analyzeMp4Audio(file, {
-            signal: internalController.signal,
-            onProgress: (progress) => onProgress?.({
-                stage: 'extracting_audio',
-                stageLabel: t.progressPreparing,
-                progress: Math.max(1, Math.round(progress * 0.1))
-            })
-        });
+        plan = await audioWorker.plan;
     } catch (error) {
         signal?.removeEventListener('abort', forwardAbort);
-        if (error instanceof UnsupportedMp4AudioError) {
+        audioWorker.close();
+        if (error instanceof AudioExtractionWorkerError && error.unsupported) {
             if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
                 throw createProtectedFallbackError(file, uiLanguage, 'format');
             }
@@ -156,14 +277,14 @@ export const transcribeMp4AudioFastPath = async (
     let allCaptions: CaptionSegment[] = [];
 
     const uploadSegment = async (segmentIndex: number): Promise<CaptionSegment[]> => {
-        const segment = plan.segments[segmentIndex];
-        const audioBlob = await buildAudioSegment(file, plan, segment, {
-            signal: internalController.signal
-        });
-
+        const audioSegment = await audioWorker.buildSegment(segmentIndex);
         const formData = new FormData();
-        formData.append('file', audioBlob, `audio-segment-${segmentIndex}.${plan.fileExtension}`);
-        formData.append('startTime', String(segment.startTime));
+        formData.append(
+            'file',
+            audioSegment.blob,
+            `audio-segment-${segmentIndex}.${audioSegment.fileExtension}`
+        );
+        formData.append('startTime', String(audioSegment.startTime));
         formData.append('segmentStyle', segmentStyle);
         formData.append('contextPrompt', contextPrompt);
         formData.append('uiLanguage', uiLanguage);
@@ -174,13 +295,11 @@ export const transcribeMp4AudioFastPath = async (
             body: formData,
             signal: internalController.signal
         });
-        if ([404, 405, 501].includes(response.status)) {
-            throw new FastPathEndpointUnavailableError();
-        }
+        if ([404, 405, 501].includes(response.status)) throw new FastPathEndpointUnavailableError();
         if (!response.ok) throw await readResponseError(response, uiLanguage);
 
         const body = await response.json() as SegmentResponse;
-        uploadedAudioBytes += audioBlob.size;
+        uploadedAudioBytes += audioSegment.encodedBytes;
         return Array.isArray(body.captions) ? body.captions : [];
     };
 
@@ -210,7 +329,7 @@ export const transcribeMp4AudioFastPath = async (
 
     try {
         if (plan.segments.length === 0) {
-            throw new UnsupportedMp4AudioError('No AAC audio segments were found');
+            throw new AudioExtractionWorkerError('No AAC or PCM audio segments were found', true);
         }
         onProgress?.({
             stage: 'transcribing',
@@ -226,16 +345,13 @@ export const transcribeMp4AudioFastPath = async (
         internalController.abort(error);
         if (error instanceof FastPathEndpointUnavailableError && completedSegments === 0) {
             if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
-                throw createProtectedFallbackError(
-                    file,
-                    uiLanguage,
-                    'service'
-                );
+                throw createProtectedFallbackError(file, uiLanguage, 'service');
             }
             return false;
         }
         throw error;
     } finally {
+        audioWorker.close();
         signal?.removeEventListener('abort', forwardAbort);
     }
 };

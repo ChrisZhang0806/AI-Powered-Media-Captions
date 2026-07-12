@@ -82,11 +82,11 @@
    
    Navigate to `http://localhost:5173`
 
-### Resumable streaming media pipeline
+### Audio-first large-video pipeline
 
-Large media files are read in a Web Worker and uploaded in bounded 8 MB chunks. Upload manifests are persisted on the server, so selecting the same file again resumes only the missing chunks. The server exposes the incomplete upload to FFmpeg as a blocking, seekable Range source; this allows audio decoding and transcription to begin before upload completion, including for MP4 files whose `moov` metadata is at the end. Caption deltas and task progress return over SSE.
+MP4, M4V, and MOV videos use an audio-only fast path before the general upload pipeline. A Web Worker reads the MP4 metadata, builds a compact AAC-LC or Linear PCM index, and assembles bounded audio segments directly from the local file. Video frames are neither decoded nor uploaded. The server receives only standalone AAC/WAV segments, normalizes them with FFmpeg, transcribes them, and returns caption batches while the remaining audio is still uploading. Constant-size PCM tracks use chunk-level indexes, so long high-resolution videos do not create millions of browser objects.
 
-After deploying, check `GET /health`. The active revision should return `"resumableStreamingUpload": true` and `"incrementalCaptionEvents": true`. Upload chunks, SSE, and the private FFmpeg Range reader must reach the same task storage; use one instance, sticky routing with durable shared storage, or an equivalent task-aware deployment.
+Videos larger than 256 MB never silently fall back to a full-video upload when audio-only extraction is unavailable. Smaller unsupported media and audio files retain the resumable 8 MB upload pipeline as a compatibility fallback. After deploying, check `GET /health`; the active revision should return `"audioTrackSegments": true`, `"resumableStreamingUpload": true`, and `"incrementalCaptionEvents": true`.
 
 ## 📖 Usage
 
@@ -227,11 +227,11 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
    
    访问 `http://localhost:5173`
 
-### 可续传流式媒体管线
+### 音频优先的大视频处理管线
 
-大型媒体由 Web Worker 以固定 8 MB 分片读取和上传，服务端持久化分片清单；再次选择同一个文件时只补传缺失分片。服务端把尚未完成的上传暴露为可等待、可定位的 Range 媒体源，FFmpeg 因而可以在上传结束前开始解码音轨和转写，也能处理 `moov` 元数据位于文件尾部的 MP4。任务进度与新增字幕通过 SSE 持续回传。
+MP4、M4V 和 MOV 会优先使用“只上传音频”链路。Web Worker 读取 MP4 元数据，为 AAC-LC 或 Linear PCM 音轨建立紧凑索引，再直接从本地文件按需组装有上限的音频片段；浏览器不会解码画面，视频画面数据也不会上传。服务端仅接收独立的 AAC/WAV 片段，用 FFmpeg 统一格式并转写，在其余音频仍在上传时持续回传字幕。固定采样大小的 PCM 使用媒体块级索引，长时高清素材不会在浏览器中生成数百万个对象。
 
-部署后访问 `GET /health`，当前版本应返回 `"resumableStreamingUpload": true` 和 `"incrementalCaptionEvents": true`。上传分片、SSE 与 FFmpeg 私有 Range 读取必须访问同一份任务存储；可采用单实例、带持久共享存储的粘性路由，或等价的任务路由方案。
+大于 256 MB 的视频在无法提取音轨时不会静默退回整段视频上传。较小的不支持媒体以及音频文件仍保留可续传的 8 MB 分片上传作为兼容路径。部署后访问 `GET /health`，当前版本应返回 `"audioTrackSegments": true`、`"resumableStreamingUpload": true` 和 `"incrementalCaptionEvents": true`。
 
 ## 📖 使用说明
 
