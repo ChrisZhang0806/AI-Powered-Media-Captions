@@ -87,9 +87,9 @@ export const Header: React.FC<HeaderProps> = ({ apiKeyData, onApiKeySuccess, uiL
                                 aria-haspopup="menu"
                                 className="focus-apple flex h-8 items-center gap-1 rounded-full border border-outline-variant bg-transparent px-3 text-[11px] font-medium leading-4 text-on-surface-variant transition-colors hover:bg-surface-container-high"
                             >
-                                <MaterialIcon name="translate" size={18} />
+                                <MaterialIcon name="translate" size={16} />
                                 {activeLanguage.shortLabel}
-                                <MaterialIcon name="keyboard_arrow_down" size={18} className={`transition-transform ${showLangDropdown ? 'rotate-180' : ''}`} />
+                                <MaterialIcon name="keyboard_arrow_down" size={16} className={`transition-transform ${showLangDropdown ? 'rotate-180' : ''}`} />
                             </button>
 
                             {showLangDropdown && (

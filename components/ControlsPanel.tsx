@@ -131,11 +131,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                         ))}
                     </dl>
 
-                    <dl className="mt-3 grid grid-cols-1 gap-x-5 gap-y-2 border-t border-surface-variant pt-3 min-[1400px]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                    <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-surface-variant pt-3">
                         {technicalItems.map((item) => (
-                            <div key={item.label} className="flex min-w-0 items-baseline gap-2">
+                            <div key={item.label} className="flex items-baseline gap-2">
                                 <dt className="shrink-0 text-[10px] font-medium leading-4 text-outline">{item.label}</dt>
-                                <dd className="min-w-0 break-words text-xs leading-4 text-on-surface-variant">{item.value}</dd>
+                                <dd className="whitespace-nowrap text-xs leading-4 text-on-surface-variant">{item.value}</dd>
                             </div>
                         ))}
                     </dl>

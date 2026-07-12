@@ -63,9 +63,9 @@
    ```bash
    cp .env.example .env.local
    ```
-   Edit `.env.local` and add your OpenAI API Key:
+   Edit `.env.local` and optionally add a server-side OpenAI API Key. Users can also provide their own key in the UI:
    ```
-   VITE_OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
 4. **Start the application**
@@ -80,11 +80,11 @@
 
 5. **Open your browser**
    
-   Navigate to `http://localhost:5173`
+   Navigate to `http://localhost:3000`
 
 ### Audio-first large-video pipeline
 
-MP4, M4V, and MOV videos use an audio-only fast path before the general upload pipeline. A Web Worker reads the MP4 metadata, builds a compact AAC-LC or Linear PCM index, and assembles bounded audio segments directly from the local file. Video frames are neither decoded nor uploaded. The server receives only standalone AAC/WAV segments, normalizes them with FFmpeg, transcribes them, and returns caption batches while the remaining audio is still uploading. Constant-size PCM tracks use chunk-level indexes, so long high-resolution videos do not create millions of browser objects.
+MP4, M4V, and MOV videos use a compact MP4 audio index, while MKV, WebM, and MPEG-TS use a lazy container-demux worker. Both paths read only encoded audio packets from the local file and assemble bounded AAC/WAV/MP3/Ogg/FLAC segments; video frames are neither decoded nor uploaded. Large lossless or high-bitrate tracks can be compressed locally to mono 16 kHz MP3 when doing so saves at least 30%. The server validates already-normalized MP3 segments and avoids a second lossy encode.
 
 Videos larger than 256 MB never silently fall back to a full-video upload when audio-only extraction is unavailable. Smaller unsupported media and audio files retain the resumable 8 MB upload pipeline as a compatibility fallback. After deploying, check `GET /health`; the active revision should return `"audioTrackSegments": true`, `"resumableStreamingUpload": true`, and `"incrementalCaptionEvents": true`.
 
@@ -208,9 +208,9 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
    ```bash
    cp .env.example .env.local
    ```
-   编辑 `.env.local` 并添加你的 OpenAI API Key：
+   编辑 `.env.local`，按需添加仅供服务端读取的 OpenAI API Key。用户也可以在界面中提供自己的密钥：
    ```
-   VITE_OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
 4. **启动应用**
@@ -225,11 +225,11 @@ Project Link: [https://github.com/ChrisZhang0806/AI-Powered-Media-Captions](http
 
 5. **打开浏览器**
    
-   访问 `http://localhost:5173`
+   访问 `http://localhost:3000`
 
 ### 音频优先的大视频处理管线
 
-MP4、M4V 和 MOV 会优先使用“只上传音频”链路。Web Worker 读取 MP4 元数据，为 AAC-LC 或 Linear PCM 音轨建立紧凑索引，再直接从本地文件按需组装有上限的音频片段；浏览器不会解码画面，视频画面数据也不会上传。服务端仅接收独立的 AAC/WAV 片段，用 FFmpeg 统一格式并转写，在其余音频仍在上传时持续回传字幕。固定采样大小的 PCM 使用媒体块级索引，长时高清素材不会在浏览器中生成数百万个对象。
+MP4、M4V 和 MOV 使用紧凑的 MP4 音轨索引，MKV、WebM 和 MPEG-TS 则使用懒加载的容器解复用 Worker。两条路径都只从本地文件读取编码后的音频包，并组装有大小上限的 AAC/WAV/MP3/Ogg/FLAC 片段；浏览器不会解码或上传视频画面。大型无损音轨或高码率音轨在预计至少节省 30% 时，会在本地智能压缩为单声道 16 kHz MP3，服务端验证格式后跳过第二次有损编码。
 
 大于 256 MB 的视频在无法提取音轨时不会静默退回整段视频上传。较小的不支持媒体以及音频文件仍保留可续传的 8 MB 分片上传作为兼容路径。部署后访问 `GET /health`，当前版本应返回 `"audioTrackSegments": true`、`"resumableStreamingUpload": true` 和 `"incrementalCaptionEvents": true`。
 

@@ -37,7 +37,7 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
                 <button
                     type="button"
                     onClick={() => onJump(cap.startTime)}
-                    className={`focus-apple flex min-h-11 flex-row items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors sm:flex-col sm:items-start sm:gap-1 ${isActive ? 'text-primary' : 'text-outline hover:text-primary'}`}
+                    className={`focus-apple flex min-h-11 flex-row items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors sm:-ml-2 sm:flex-col sm:items-start sm:gap-1 ${isActive ? 'text-primary' : 'text-outline hover:text-primary'}`}
                 >
                     <span className="text-[11px]">{cap.startTime}</span>
                     <span className="text-[11px] opacity-60">{cap.endTime}</span>
@@ -48,7 +48,7 @@ export const SubtitleItem: React.FC<SubtitleItemProps> = ({
             <div className="min-w-0 sm:col-span-8">
                 {isEditing ? (
                     <textarea
-                        className="focus-apple min-h-[92px] w-full rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-sm leading-relaxed text-on-surface outline-none"
+                        className="min-h-[92px] w-full resize-none rounded-[4px] border border-outline bg-transparent px-4 py-3 text-sm leading-5 text-on-surface caret-primary outline-none transition-colors hover:border-on-surface focus:border-2 focus:border-primary focus:px-[15px] focus:py-[11px]"
                         value={editText}
                         onChange={(e) => onEditChange(e.target.value)}
                         autoFocus

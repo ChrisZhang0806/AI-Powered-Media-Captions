@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { validateApiKey } from '../services/openaiService';
+import { validateApiKey } from '../services/apiKeyService';
 import { Language, getTranslation } from '../utils/i18n';
 
 export const useApiKey = (uiLanguage: Language) => {

@@ -577,15 +577,25 @@ export const transcribeWithServer = async (
     }
 };
 
-/** Check if the backend server is available. */
-export const checkServerHealth = async (): Promise<boolean> => {
+export interface ServerHealth {
+    available: boolean;
+    apiKeyConfigured: boolean;
+}
+
+/** Check backend availability and whether it has a server-managed provider key. */
+export const getServerHealth = async (): Promise<ServerHealth> => {
     try {
         const response = await fetch(`${SERVER_URL}/health`, {
             method: 'GET',
             signal: AbortSignal.timeout(3000)
         });
-        return response.ok;
+        if (!response.ok) return { available: false, apiKeyConfigured: false };
+        const body = await response.json();
+        return {
+            available: true,
+            apiKeyConfigured: body?.apiKeyConfigured === true
+        };
     } catch {
-        return false;
+        return { available: false, apiKeyConfigured: false };
     }
 };

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
@@ -29,9 +29,19 @@ import {
     normalizeWhisperSegments,
     parseChineseNormalizationDirective
 } from './chineseNormalization.js';
+import { matchesStandardMp3Profile, STANDARD_MP3_PROFILE } from './audioProfile.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+for (const envPath of [
+    path.resolve(__dirname, '..', '.env.local'),
+    path.resolve(__dirname, '..', '.env'),
+    path.resolve(__dirname, '.env.local'),
+    path.resolve(__dirname, '.env')
+]) {
+    if (fs.existsSync(envPath)) dotenv.config({ path: envPath });
+}
 
 // Electron 环境下设置 FFmpeg 路径
 if (process.env.FFMPEG_PATH) {
@@ -107,7 +117,8 @@ const audioSegmentUpload = multer({
     storage,
     limits: { fileSize: MAX_AUDIO_SEGMENT_SIZE },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype?.startsWith('audio/') || path.extname(file.originalname).toLowerCase() === '.aac') {
+        const extension = path.extname(file.originalname).toLowerCase();
+        if (file.mimetype?.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension)) {
             cb(null, true);
         } else {
             cb(new Error('无法读取音频片段。'));
@@ -474,6 +485,26 @@ function normalizeAudioSegment(inputPath, outputPath) {
     });
 }
 
+function probeAudioMetadata(inputPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(inputPath, (error, metadata) => {
+            if (error) reject(error);
+            else resolve(metadata);
+        });
+    });
+}
+
+async function canUseUploadedTranscriptionProfile(file, requestedProfile) {
+    if (requestedProfile !== STANDARD_MP3_PROFILE) return false;
+    if (path.extname(file.originalname).toLowerCase() !== '.mp3') return false;
+    try {
+        const metadata = await probeAudioMetadata(file.path);
+        return matchesStandardMp3Profile(metadata, file.size);
+    } catch {
+        return false;
+    }
+}
+
 /**
  * 将音频分割成多个片段（每段最多 10 分钟）
  */
@@ -828,13 +859,32 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
+        apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY),
         features: {
             audioTrackSegments: true,
-            audioTrackCodecs: ['aac-lc', 'linear-pcm'],
+            audioTrackContainers: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'mpeg-ts'],
+            audioTrackCodecs: ['aac-lc', 'linear-pcm', 'mp3', 'opus', 'vorbis', 'flac'],
             resumableStreamingUpload: true,
             incrementalCaptionEvents: true
         }
     });
+});
+
+/** Validate BYOK credentials server-side so no provider SDK or project key is bundled in the browser. */
+app.post('/api/keys/validate', async (req, res) => {
+    const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+    if (!apiKey || apiKey.length > 512) return res.json({ valid: false });
+
+    try {
+        const client = new OpenAI({ apiKey, timeout: 10_000, maxRetries: 0 });
+        await client.models.list();
+        return res.json({ valid: true });
+    } catch (error) {
+        const status = Number(error?.status || error?.response?.status || 0);
+        if (status === 401 || status === 403) return res.json({ valid: false });
+        console.warn(`[API key validation] Provider request failed with status ${status || 'unknown'}`);
+        return res.status(503).json({ valid: false });
+    }
 });
 
 const sendInternalMediaHeaders = (req, res, task) => {
@@ -1111,9 +1161,9 @@ app.post('/api/uploads/:taskId/complete', async (req, res) => {
 });
 
 /**
- * Stateless Cloud Run fast path. The browser sends one AAC-LC or Linear PCM
- * segment extracted from the local MP4; this request transcodes and returns
- * timestamped captions without storing a multi-GB video or task session.
+ * Stateless audio-first fast path. The browser sends one bounded audio segment
+ * extracted from the local container; this request returns timestamped captions
+ * without storing a multi-GB video or task session.
  */
 app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: '无法读取音频片段。' });
@@ -1127,6 +1177,7 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
     const contextPrompt = String(req.body.contextPrompt || '').slice(0, 4000);
     const apiKey = req.body.apiKey ? String(req.body.apiKey) : null;
     const uiLanguage = normalizeUiLanguage(req.body.uiLanguage);
+    const requestedAudioProfile = String(req.body.audioProfile || '');
 
     if (!Number.isFinite(startTime) || startTime < 0) {
         removeFile(req.file.path);
@@ -1134,15 +1185,17 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
     }
 
     try {
-        await normalizeAudioSegment(req.file.path, normalizedPath);
-        const normalizedSize = fs.statSync(normalizedPath).size;
+        const useUploadedAudio = await canUseUploadedTranscriptionProfile(req.file, requestedAudioProfile);
+        const transcriptionPath = useUploadedAudio ? req.file.path : normalizedPath;
+        if (!useUploadedAudio) await normalizeAudioSegment(req.file.path, normalizedPath);
+        const normalizedSize = fs.statSync(transcriptionPath).size;
         if (normalizedSize >= 25 * 1024 * 1024) {
             throw new Error('音频片段过大，无法转写。');
         }
 
         const segments = await transcribeSegmentWithRetry(
             null,
-            normalizedPath,
+            transcriptionPath,
             startTime,
             segmentStyle,
             contextPrompt,
@@ -1154,7 +1207,8 @@ app.post('/api/audio-segments/transcribe', uploadAudioSegment, async (req, res, 
         res.json({
             captions,
             uploadedBytes: req.file.size,
-            normalizedBytes: normalizedSize
+            normalizedBytes: normalizedSize,
+            normalizationSkipped: useUploadedAudio
         });
     } catch (error) {
         next(error);

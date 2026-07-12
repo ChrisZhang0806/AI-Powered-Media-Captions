@@ -3,12 +3,14 @@ const STYLE_LIMITS = {
     natural: { chineseChars: 12, latinChars: 36, minChineseChars: 3, maxDuration: 4.5 },
     detailed: { chineseChars: 16, latinChars: 44, minChineseChars: 4, maxDuration: 6 }
 };
+const PAUSE_BREAK_SECONDS = 0.5;
 
 const hasChinese = (text) => /[\u3400-\u9fff]/.test(text);
 const isStrongBoundary = (character) => /[。！？!?；;]/.test(character);
 const isSoftBoundary = (character) => /[，,、：:]/.test(character);
 const speechLength = (text) => Array.from(String(text || ''))
     .filter((character) => !/[\s\p{P}\p{S}]/u.test(character)).length;
+const isSpeechCharacter = (character) => !/[\s\p{P}\p{S}]/u.test(character);
 
 const findChineseCut = (characters, desiredLength, hardLimit) => {
     const limit = Math.min(hardLimit, characters.length);
@@ -93,6 +95,78 @@ const splitLatin = (text, targetCount, hardLimit) => {
 const validWordTimings = (segment) => (Array.isArray(segment.words) ? segment.words : [])
     .filter((word) => Number.isFinite(word.start) && Number.isFinite(word.end) && word.end >= word.start)
     .sort((a, b) => a.start - b.start);
+
+const groupWordsAtPauses = (words) => {
+    const groups = [];
+    let current = [];
+
+    for (const word of words) {
+        const previous = current[current.length - 1];
+        if (previous && word.start - previous.end >= PAUSE_BREAK_SECONDS) {
+            groups.push(current);
+            current = [];
+        }
+        current.push(word);
+    }
+    if (current.length > 0) groups.push(current);
+    return groups;
+};
+
+const partitionTextBySpeechWeight = (text, groupWeights) => {
+    if (groupWeights.length <= 1) return [text.trim()];
+    const characters = Array.from(text);
+    const totalTextWeight = Math.max(1, speechLength(text));
+    const totalWordWeight = Math.max(1, groupWeights.reduce((sum, weight) => sum + weight, 0));
+    const parts = [];
+    let characterIndex = 0;
+    let consumedTextWeight = 0;
+    let consumedWordWeight = 0;
+
+    for (let groupIndex = 0; groupIndex < groupWeights.length - 1; groupIndex++) {
+        consumedWordWeight += groupWeights[groupIndex];
+        const targetWeight = Math.max(
+            consumedTextWeight + 1,
+            Math.round((consumedWordWeight / totalWordWeight) * totalTextWeight)
+        );
+        const startIndex = characterIndex;
+
+        while (characterIndex < characters.length && consumedTextWeight < targetWeight) {
+            if (isSpeechCharacter(characters[characterIndex])) consumedTextWeight++;
+            characterIndex++;
+        }
+        while (
+            characterIndex < characters.length
+            && /[\p{P}\p{S}]/u.test(characters[characterIndex])
+        ) {
+            characterIndex++;
+        }
+        parts.push(characters.slice(startIndex, characterIndex).join('').trim());
+        while (characterIndex < characters.length && /\s/u.test(characters[characterIndex])) characterIndex++;
+    }
+    parts.push(characters.slice(characterIndex).join('').trim());
+    return parts;
+};
+
+const splitAtTimedPauses = (segment) => {
+    const words = validWordTimings(segment);
+    const groups = groupWordsAtPauses(words);
+    if (groups.length <= 1) return [segment];
+
+    const groupWeights = groups.map((group) => group.reduce(
+        (sum, word) => sum + Math.max(1, speechLength(word.text)),
+        0
+    ));
+    const textParts = partitionTextBySpeechWeight(String(segment.text || ''), groupWeights);
+    if (textParts.length !== groups.length || textParts.some((part) => !part)) return [segment];
+
+    return groups.map((group, index) => ({
+        ...segment,
+        start: group[0].start,
+        end: group[group.length - 1].end,
+        text: textParts[index],
+        words: group
+    }));
+};
 
 const allocateUsingWordTimings = (segment, chunks) => {
     const words = validWordTimings(segment);
@@ -191,26 +265,28 @@ export const segmentSubtitles = (segments, style = 'natural') => {
     const limits = STYLE_LIMITS[style] || STYLE_LIMITS.natural;
     const result = [];
 
-    for (const segment of segments) {
-        const text = String(segment.text || '').trim();
-        if (!text) continue;
-        const duration = Math.max(0, Number(segment.end) - Number(segment.start));
-        const chinese = hasChinese(text);
-        const hardLimit = chinese ? limits.chineseChars : limits.latinChars;
-        const units = chinese ? Array.from(text).length : text.length;
-        const lengthCount = Math.ceil(units / hardLimit);
-        const durationCount = Math.ceil(duration / limits.maxDuration);
-        const readableCountLimit = chinese
-            ? Math.max(1, Math.floor(Math.max(1, speechLength(text)) / limits.minChineseChars))
-            : Math.max(1, text.trim().split(/\s+/).length);
-        const targetCount = Math.max(lengthCount, Math.min(durationCount, readableCountLimit));
-        const chunks = chinese
-            ? splitChinese(text, targetCount, hardLimit)
-            : splitLatin(text, targetCount, hardLimit);
-        result.push(...allocateTimes(segment, chunks));
+    for (const sourceSegment of segments) {
+        const pauseSegments = splitAtTimedPauses(sourceSegment);
+        for (const segment of pauseSegments) {
+            const text = String(segment.text || '').trim();
+            if (!text) continue;
+            const duration = Math.max(0, Number(segment.end) - Number(segment.start));
+            const chinese = hasChinese(text);
+            const hardLimit = chinese ? limits.chineseChars : limits.latinChars;
+            const units = chinese ? Array.from(text).length : text.length;
+            const lengthCount = Math.ceil(units / hardLimit);
+            const durationCount = Math.ceil(duration / limits.maxDuration);
+            const readableCountLimit = chinese
+                ? Math.max(1, Math.floor(Math.max(1, speechLength(text)) / limits.minChineseChars))
+                : Math.max(1, text.trim().split(/\s+/).length);
+            const targetCount = Math.max(lengthCount, Math.min(durationCount, readableCountLimit));
+            const chunks = chinese
+                ? splitChinese(text, targetCount, hardLimit)
+                : splitLatin(text, targetCount, hardLimit);
+            result.push(...allocateTimes(segment, chunks));
+        }
     }
     return mergeSingleCharacterRuns(result, limits.chineseChars);
 };
 
 export const getStyleLimits = (style = 'natural') => STYLE_LIMITS[style] || STYLE_LIMITS.natural;
-

@@ -1,26 +1,36 @@
 import type { CaptionSegment, ProgressInfo, SegmentStyle } from '../types';
 import { Language, getTranslation } from '../utils/i18n';
 import { UserFacingError } from '../utils/userFacingError';
+import {
+    chooseAudioCompression,
+    STANDARD_MP3_PROFILE,
+    transcodeAudioSegment
+} from './audioTranscodeService';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 const FAST_PATH_CONCURRENCY = 2;
-const FAST_PATH_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov']);
+const MP4_FAST_PATH_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.m4a']);
+const CONTAINER_FAST_PATH_EXTENSIONS = new Set(['.mkv', '.webm', '.ts', '.mts', '.m2ts']);
 const MAX_SILENT_FULL_UPLOAD_BYTES = 256 * 1024 * 1024;
+
+type AudioFormat = 'aac' | 'wav' | 'mp3' | 'ogg' | 'flac';
+type AudioFileExtension = AudioFormat;
+type AudioWorkerKind = 'mp4' | 'container';
 
 interface AudioSegmentSummary {
     index: number;
     startTime: number;
     duration: number;
     encodedBytes: number;
-    sampleStart: number;
-    sampleEnd: number;
+    sampleStart?: number;
+    sampleEnd?: number;
 }
 
 interface AudioPlanSummary {
     codec: string;
-    audioFormat: 'aac' | 'wav';
-    fileExtension: 'aac' | 'wav';
-    mimeType: 'audio/aac' | 'audio/wav';
+    audioFormat: AudioFormat;
+    fileExtension: AudioFileExtension;
+    mimeType: string;
     sampleRate: number;
     channelCount: number;
     duration: number;
@@ -32,7 +42,15 @@ interface BuiltAudioSegment {
     blob: Blob;
     startTime: number;
     encodedBytes: number;
-    fileExtension: 'aac' | 'wav';
+    fileExtension: AudioFileExtension;
+}
+
+interface UploadAudioSegment {
+    blob: Blob;
+    startTime: number;
+    encodedBytes: number;
+    fileExtension: AudioFileExtension;
+    audioProfile?: string;
 }
 
 interface SegmentResponse {
@@ -97,10 +115,12 @@ const readResponseError = async (response: Response, uiLanguage: Language): Prom
     }
 };
 
-const isFastPathCandidate = (file: File): boolean => {
+const getAudioWorkerKind = (file: File): AudioWorkerKind | null => {
     const extensionIndex = file.name.lastIndexOf('.');
     const extension = extensionIndex >= 0 ? file.name.slice(extensionIndex).toLowerCase() : '';
-    return FAST_PATH_EXTENSIONS.has(extension);
+    if (MP4_FAST_PATH_EXTENSIONS.has(extension)) return 'mp4';
+    if (CONTAINER_FAST_PATH_EXTENSIONS.has(extension)) return 'container';
+    return null;
 };
 
 const supportsAudioSegmentEndpoint = async (signal?: AbortSignal): Promise<boolean> => {
@@ -130,10 +150,13 @@ const createProtectedFallbackError = (
 
 const createAudioWorker = (
     file: File,
+    workerKind: AudioWorkerKind,
     onAnalysisProgress: (progress: number) => void,
     signal?: AbortSignal
 ) => {
-    const worker = new Worker(new URL('./mp4Audio.worker.ts', import.meta.url), { type: 'module' });
+    const worker = workerKind === 'mp4'
+        ? new Worker(new URL('./mp4Audio.worker.ts', import.meta.url), { type: 'module' })
+        : new Worker(new URL('./containerAudio.worker.ts', import.meta.url), { type: 'module' });
     const pendingSegments = new Map<number, {
         resolve: (segment: BuiltAudioSegment) => void;
         reject: (error: Error) => void;
@@ -197,7 +220,7 @@ const createAudioWorker = (
             }
         }
     };
-    worker.onerror = () => close(new AudioExtractionWorkerError('The browser could not extract the MP4 audio track'));
+    worker.onerror = () => close(new AudioExtractionWorkerError('The browser could not extract the media audio track'));
 
     if (signal?.aborted) handleAbort();
     else signal?.addEventListener('abort', handleAbort, { once: true });
@@ -218,9 +241,9 @@ const createAudioWorker = (
 };
 
 /**
- * Extract and upload only AAC-LC or camera PCM audio. MP4 table expansion and
- * segment assembly stay inside a bounded worker, so large video never enters
- * the main-thread heap and video bytes never cross the network.
+ * Extract and upload only the audio track. Container parsing and segment
+ * assembly stay inside a bounded worker, so large video never enters the
+ * main-thread heap and video bytes never cross the network.
  */
 export const transcribeMp4AudioFastPath = async (
     file: File,
@@ -232,7 +255,8 @@ export const transcribeMp4AudioFastPath = async (
     uiLanguage: Language,
     signal?: AbortSignal
 ): Promise<boolean> => {
-    if (!isFastPathCandidate(file)) return false;
+    const workerKind = getAudioWorkerKind(file);
+    if (!workerKind) return false;
     const t = getTranslation(uiLanguage);
 
     const internalController = new AbortController();
@@ -249,35 +273,111 @@ export const transcribeMp4AudioFastPath = async (
         return false;
     }
 
-    const audioWorker = createAudioWorker(file, (progress) => onProgress?.({
+    const reportAnalysisProgress = (progress: number) => onProgress?.({
         stage: 'extracting_audio',
         stageLabel: t.progressExtracting,
         progress: Math.max(1, Math.round(progress * 0.1))
-    }), internalController.signal);
+    });
+    let activeWorkerKind = workerKind;
+    let audioWorker = createAudioWorker(
+        file,
+        activeWorkerKind,
+        reportAnalysisProgress,
+        internalController.signal
+    );
 
-    let plan: AudioPlanSummary;
-    try {
-        plan = await audioWorker.plan;
-    } catch (error) {
-        signal?.removeEventListener('abort', forwardAbort);
-        audioWorker.close();
-        if (error instanceof AudioExtractionWorkerError && error.unsupported) {
-            if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
-                throw createProtectedFallbackError(file, uiLanguage, 'format');
+    let plan!: AudioPlanSummary;
+    while (true) {
+        try {
+            plan = await audioWorker.plan;
+            break;
+        } catch (error) {
+            audioWorker.close();
+            if (internalController.signal.aborted) throw error;
+            if (
+                error instanceof AudioExtractionWorkerError
+                && error.unsupported
+                && activeWorkerKind === 'mp4'
+            ) {
+                activeWorkerKind = 'container';
+                audioWorker = createAudioWorker(
+                    file,
+                    activeWorkerKind,
+                    reportAnalysisProgress,
+                    internalController.signal
+                );
+                continue;
             }
-            return false;
+
+            signal?.removeEventListener('abort', forwardAbort);
+            if (error instanceof AudioExtractionWorkerError && error.unsupported) {
+                if (file.size > MAX_SILENT_FULL_UPLOAD_BYTES) {
+                    throw createProtectedFallbackError(file, uiLanguage, 'format');
+                }
+                return false;
+            }
+            throw error;
         }
-        throw error;
     }
 
-    const totalAudioSize = formatFileSize(plan.encodedBytes);
+    const compression = chooseAudioCompression(plan);
+    const sourceAlreadyStandard = plan.audioFormat === 'mp3'
+        && plan.sampleRate === 16_000
+        && plan.channelCount === 1
+        && compression.sourceBitrate > 0
+        && compression.sourceBitrate <= 80_000;
+    let compressionEnabled = compression.enabled;
+    let expectedUploadBytes = compressionEnabled ? compression.estimatedBytes : plan.encodedBytes;
     let nextSegmentIndex = 0;
     let completedSegments = 0;
     let uploadedAudioBytes = 0;
     let allCaptions: CaptionSegment[] = [];
 
+    const prepareSegment = async (segmentIndex: number): Promise<UploadAudioSegment> => {
+        const original = await audioWorker.buildSegment(segmentIndex);
+        if (!compressionEnabled) {
+            return sourceAlreadyStandard
+                ? { ...original, audioProfile: STANDARD_MP3_PROFILE }
+                : original;
+        }
+
+        try {
+            const compressed = await transcodeAudioSegment(
+                original.blob,
+                original.fileExtension,
+                {
+                    signal: internalController.signal,
+                    onProgress: (progress) => {
+                        const completedProgress = completedSegments / plan.segments.length;
+                        const partialProgress = (progress / 100) / plan.segments.length;
+                        onProgress?.({
+                            stage: 'loading_ffmpeg',
+                            stageLabel: t.progressStreaming,
+                            progress: Math.min(99, 10 + Math.round((completedProgress + partialProgress) * 90)),
+                            detail: t.progressCompressionDetail.replace(
+                                '{size}',
+                                formatFileSize(expectedUploadBytes)
+                            )
+                        });
+                    }
+                }
+            );
+            return {
+                ...compressed,
+                startTime: original.startTime,
+                audioProfile: compressed.profile
+            };
+        } catch (error) {
+            if (internalController.signal.aborted) throw error;
+            compressionEnabled = false;
+            expectedUploadBytes = plan.encodedBytes;
+            console.warn('[Audio compression] Falling back to the extracted audio segment');
+            return original;
+        }
+    };
+
     const uploadSegment = async (segmentIndex: number): Promise<CaptionSegment[]> => {
-        const audioSegment = await audioWorker.buildSegment(segmentIndex);
+        const audioSegment = await prepareSegment(segmentIndex);
         const formData = new FormData();
         formData.append(
             'file',
@@ -288,6 +388,7 @@ export const transcribeMp4AudioFastPath = async (
         formData.append('segmentStyle', segmentStyle);
         formData.append('contextPrompt', contextPrompt);
         formData.append('uiLanguage', uiLanguage);
+        if (audioSegment.audioProfile) formData.append('audioProfile', audioSegment.audioProfile);
         if (apiKey) formData.append('apiKey', apiKey);
 
         const response = await fetch(`${SERVER_URL}/api/audio-segments/transcribe`, {
@@ -316,26 +417,28 @@ export const transcribeMp4AudioFastPath = async (
             const progress = 10 + Math.round((completedSegments / plan.segments.length) * 90);
             onProgress?.({
                 stage: 'transcribing',
-                stageLabel: t.progressTranscribing,
+                stageLabel: t.progressStreaming,
                 progress: Math.min(100, progress),
                 detail: t.progressSegmentsDetail
                     .replace('{completed}', completedSegments.toString())
                     .replace('{total}', plan.segments.length.toString())
                     .replace('{uploaded}', formatFileSize(uploadedAudioBytes))
-                    .replace('{size}', totalAudioSize)
+                    .replace('{size}', formatFileSize(expectedUploadBytes))
             });
         }
     };
 
     try {
         if (plan.segments.length === 0) {
-            throw new AudioExtractionWorkerError('No AAC or PCM audio segments were found', true);
+            throw new AudioExtractionWorkerError('No supported audio segments were found', true);
         }
         onProgress?.({
-            stage: 'transcribing',
-            stageLabel: t.progressTranscribing,
+            stage: compressionEnabled ? 'loading_ffmpeg' : 'transcribing',
+            stageLabel: t.progressStreaming,
             progress: 10,
-            detail: t.progressAudioOnlyDetail.replace('{size}', totalAudioSize)
+            detail: compressionEnabled
+                ? t.progressCompressionDetail.replace('{size}', formatFileSize(expectedUploadBytes))
+                : t.progressAudioOnlyDetail.replace('{size}', formatFileSize(expectedUploadBytes))
         });
 
         const runnerCount = Math.min(FAST_PATH_CONCURRENCY, plan.segments.length);

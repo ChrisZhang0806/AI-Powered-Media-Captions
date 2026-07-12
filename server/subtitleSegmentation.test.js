@@ -47,6 +47,43 @@ test('uses word timestamps instead of stretching captions across silent gaps', (
     assert.deepEqual(result.map(({ start, end }) => [start, end]), [[1, 1.8], [30, 30.6]]);
 });
 
+test('treats a half-second word pause as a hard subtitle boundary', () => {
+    const result = segmentSubtitles([{
+        start: 0,
+        end: 2.1,
+        text: '你好，继续吧',
+        words: [
+            { start: 0, end: 0.2, text: '你' },
+            { start: 0.2, end: 0.4, text: '好' },
+            { start: 1.1, end: 1.3, text: '继' },
+            { start: 1.3, end: 1.5, text: '续' },
+            { start: 1.5, end: 1.7, text: '吧' }
+        ]
+    }], 'natural');
+
+    assert.deepEqual(result.map(({ text, start, end }) => ({ text, start, end })), [
+        { text: '你好，', start: 0, end: 0.4 },
+        { text: '继续吧', start: 1.1, end: 1.7 }
+    ]);
+});
+
+test('does not force a break for normal short gaps', () => {
+    const result = segmentSubtitles([{
+        start: 0,
+        end: 1.4,
+        text: '我们继续',
+        words: [
+            { start: 0, end: 0.3, text: '我' },
+            { start: 0.3, end: 0.6, text: '们' },
+            { start: 0.9, end: 1.1, text: '继' },
+            { start: 1.1, end: 1.4, text: '续' }
+        ]
+    }], 'natural');
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0].text, '我们继续');
+});
+
 test('merges a continuous run of single-character captions but keeps an isolated interjection', () => {
     const result = segmentSubtitles([
         { start: 0, end: 0.5, text: '嗯' },
@@ -74,4 +111,3 @@ test('segment styles produce progressively wider captions', () => {
     assert.ok(segmentSubtitles(source, 'compact').length >= segmentSubtitles(source, 'natural').length);
     assert.ok(segmentSubtitles(source, 'natural').length >= segmentSubtitles(source, 'detailed').length);
 });
-

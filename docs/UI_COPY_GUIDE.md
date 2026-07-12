@@ -29,7 +29,12 @@
 | `viewUsage` | 查看用量 | View usage |
 | `deleteKey` | 移除密钥 | Remove key |
 | `confirmDelete` | 确认移除 | Confirm removal |
-| `confirmReset` | 此操作会清除当前字幕和处理进度。是否继续？ | This clears the current captions and processing progress. Continue? |
+| `confirmResetTitle` | 清除当前内容？ | Clear current content? |
+| `confirmReset` | 当前字幕和处理进度将被永久清除。 | The current captions and processing progress will be permanently cleared. |
+| `confirmResetAction` | 清除内容 | Clear content |
+| `confirmReplaceTitle` | 替换当前文件？ | Replace current file? |
+| `confirmReplace` | 导入新文件会清除当前字幕和处理进度。 | Importing a new file clears the current captions and processing progress. |
+| `confirmReplaceAction` | 替换文件 | Replace file |
 | `cancel` | 取消 | Cancel |
 | `verifyAndConfirm` | 验证并保存 | Verify and save |
 

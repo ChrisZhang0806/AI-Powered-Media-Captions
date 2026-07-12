@@ -30,7 +30,7 @@ const postError = (error: unknown, phase: 'analyze' | 'build', segmentIndex?: nu
         type: 'error',
         phase,
         segmentIndex,
-        unsupported: error instanceof UnsupportedMp4AudioError,
+        unsupported: phase === 'analyze' || error instanceof UnsupportedMp4AudioError,
         message: error instanceof Error ? error.message : 'MP4 audio extraction failed'
     });
 };

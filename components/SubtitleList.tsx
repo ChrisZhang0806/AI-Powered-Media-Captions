@@ -76,13 +76,15 @@ export const SubtitleList: React.FC<SubtitleListProps> = ({
                 </div>
             </div>
 
-            <div className="hidden shrink-0 grid-cols-12 gap-2 border-b border-surface-variant bg-surface-container-highest/30 px-6 py-2 text-sm font-medium leading-5 text-on-surface-variant sm:grid">
+            <div className="hidden shrink-0 grid-cols-12 gap-4 overflow-hidden border-b border-surface-variant bg-surface-container-highest/30 px-6 py-2 text-sm font-medium leading-5 text-on-surface-variant [scrollbar-gutter:stable] sm:grid">
                 <div className="col-span-2">{t.playPosition}</div>
                 <div className="col-span-8">{t.originalContent}</div>
-                <div className="col-span-2 text-right">{t.manage}</div>
+                <div className="col-span-2 flex justify-end">
+                    <span className="flex w-11 justify-center">{t.manage}</span>
+                </div>
             </div>
 
-            <div ref={listRef} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-low" id="subtitle-list-container" aria-live="polite">
+            <div ref={listRef} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-low [scrollbar-gutter:stable]" id="subtitle-list-container" aria-live="polite">
                 {captions.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 py-12 text-outline opacity-70">
                         <MaterialIcon name="closed_caption_off" size={56} />

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { AppStatus, CaptionSegment, VideoMetadata, ProgressInfo, SegmentStyle } from './types';
-import { transcribeWithServer, checkServerHealth, cancelServerTranscription } from './services/serverService';
+import { transcribeWithServer, getServerHealth, cancelServerTranscription } from './services/serverService';
 import { parseCaptions } from './utils/captionUtils';
 import { useAudioAnalyser } from './hooks/useAudioAnalyser';
 import { useMediaSync } from './hooks/useMediaSync';
@@ -14,16 +14,24 @@ import { MediaPlayer } from './components/MediaPlayer';
 import { ControlsPanel } from './components/ControlsPanel';
 import { SubtitleList } from './components/SubtitleList';
 import { MaterialIcon } from './components/MaterialIcon';
+import { ConfirmationDialog } from './components/ConfirmationDialog';
 
 const hasDraggedFiles = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files');
 const MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024;
 const MAX_BROWSER_METADATA_BYTES = 256 * 1024 * 1024;
-const SUPPORTED_FILE_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'ts', 'mp3', 'wav', 'm4a', 'aac', 'srt', 'vtt']);
+const SUPPORTED_FILE_EXTENSIONS = new Set([
+    'mp4', 'm4v', 'mov', 'mkv', 'webm', 'ts', 'mts', 'm2ts',
+    'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'srt', 'vtt'
+]);
 
 const isSupportedFile = (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     return file.type.startsWith('video/') || file.type.startsWith('audio/') || SUPPORTED_FILE_EXTENSIONS.has(extension);
 };
+
+type ConfirmationRequest =
+    | { type: 'reset' }
+    | { type: 'replace-file'; file: File };
 
 const App: React.FC = () => {
     // State Management
@@ -47,6 +55,8 @@ const App: React.FC = () => {
     const segmentStyle: SegmentStyle = 'natural';
     const [contextPrompt, setContextPrompt] = useState('');
     const [isLeftDropActive, setIsLeftDropActive] = useState(false);
+    const [confirmationRequest, setConfirmationRequest] = useState<ConfirmationRequest | null>(null);
+    const closeConfirmation = React.useCallback(() => setConfirmationRequest(null), []);
 
     // Editing State
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -168,7 +178,10 @@ const App: React.FC = () => {
         }
 
         const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING;
-        if (hasWorkToLose && !window.confirm(t.confirmReset)) return;
+        if (hasWorkToLose) {
+            setConfirmationRequest({ type: 'replace-file', file });
+            return;
+        }
 
         await processFile(file);
     };
@@ -235,8 +248,12 @@ const App: React.FC = () => {
     const handleProcess = async () => {
         if (!videoFile) return;
 
-        // Check if API Key exists
-        if (!apiKeyData.userApiKey) {
+        const serverHealth = await getServerHealth();
+        if (!serverHealth.available) {
+            setErrorMsg(t.errorServerUnavailable);
+            return;
+        }
+        if (!apiKeyData.userApiKey && !serverHealth.apiKeyConfigured) {
             setErrorMsg(t.errorNoApiKey);
             apiKeyData.openPanel();
             return;
@@ -252,12 +269,7 @@ const App: React.FC = () => {
         setProgressInfo(null);
 
         try {
-            const userApiKey = apiKeyData.userApiKey;
-
-            const isServerAvailable = await checkServerHealth();
-            if (!isServerAvailable) {
-                throw new Error(t.errorServerUnavailable);
-            }
+            const userApiKey = apiKeyData.userApiKey || undefined;
 
             await transcribeWithServer(
                 videoFile,
@@ -291,12 +303,7 @@ const App: React.FC = () => {
         }
     };
 
-    const handleReset = () => {
-        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING;
-        if (hasWorkToLose && !window.confirm(t.confirmReset)) {
-            return;
-        }
-
+    const resetWorkspace = () => {
         metadataInspectionRef.current++;
         setVideoFile(null);
         setVideoMeta(null);
@@ -311,6 +318,31 @@ const App: React.FC = () => {
         setProgressInfo(null);
         setErrorMsg('');
     };
+
+    const handleReset = () => {
+        const hasWorkToLose = captions.length > 0 || status === AppStatus.PROCESSING;
+        if (hasWorkToLose) {
+            setConfirmationRequest({ type: 'reset' });
+            return;
+        }
+
+        resetWorkspace();
+    };
+
+    const handleConfirm = () => {
+        const request = confirmationRequest;
+        if (!request) return;
+
+        setConfirmationRequest(null);
+        if (request.type === 'replace-file') {
+            void processFile(request.file);
+            return;
+        }
+
+        resetWorkspace();
+    };
+
+    const isReplacingFile = confirmationRequest?.type === 'replace-file';
 
     const handleEditSave = () => {
         if (editingId !== null) {
@@ -406,6 +438,17 @@ const App: React.FC = () => {
                     </div>
                 </div>
             </main>
+
+            <ConfirmationDialog
+                open={Boolean(confirmationRequest)}
+                title={isReplacingFile ? t.confirmReplaceTitle : t.confirmResetTitle}
+                description={isReplacingFile ? t.confirmReplace : t.confirmReset}
+                hint={isReplacingFile ? undefined : t.confirmResetDownloadHint}
+                cancelLabel={t.cancel}
+                confirmLabel={isReplacingFile ? t.confirmReplaceAction : t.confirmResetAction}
+                onCancel={closeConfirmation}
+                onConfirm={handleConfirm}
+            />
         </div>
     );
 };

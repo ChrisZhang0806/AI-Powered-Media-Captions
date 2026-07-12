@@ -42,7 +42,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect, uiLang
                     type="file"
                     ref={fileInputRef}
                     className="hidden"
-                    accept="video/*,audio/*,.srt,.vtt,.ts"
+                    accept="video/*,audio/*,.mp4,.m4v,.mov,.mkv,.webm,.ts,.mts,.m2ts,.srt,.vtt"
                     onChange={handleFileChange}
                 />
             </button>

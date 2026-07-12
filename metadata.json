@@ -1,5 +1,5 @@
 {
-  "name": "AI 视频字幕",
+  "name": "CoCap — AI 视频字幕",
   "description": "为音频和视频生成、编辑并导出 SRT、VTT 或纯文本字幕。",
   "requestFramePermissions": []
 }
